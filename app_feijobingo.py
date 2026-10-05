@@ -62,7 +62,7 @@ if modulo == "🪑 Reserva de Mesas":
         st.subheader("Mapa Físico das Mesas")
         
         # LINK DIRETO DA IMAGEM DO MAPA
-        URL_MAPA = "https://i.postimg.cc/mDxg7Csm/Mapa-das-Mesas.jpg"
+        URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
         st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Palco, Bares, Fichas, Barracas e Setores A, B, C e D", use_container_width=True)
         
         try:
