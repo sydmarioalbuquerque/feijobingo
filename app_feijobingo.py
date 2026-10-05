@@ -11,12 +11,12 @@ from email import encoders
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Garantir 'fpdf2' no requirements.txt")
+    st.error("Por favor, garanta que 'fpdf2' está listado no arquivo requirements.txt no GitHub.")
 
 # Configuração da Página
 st.set_page_config(page_title="FeijoBingo 2026 - Paróquia da Madalena", layout="centered")
 
-# CSS Responsivo
+# CSS Responsivo para Celulares
 st.markdown(
     """
     <style>
@@ -31,9 +31,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Endpoint e ID da Planilha Mestra do FeijoBingo
-URL_API = "https://script.google.com/macros/s/SEU_NOVO_SCRIPT_FEIJOBINGO/exec"
-SHEET_ID = "ID_DA_SUA_PLANILHA_FEIJOBINGO"
+# Endpoint do Google Apps Script e ID da Planilha Patrocinadores2026
+URL_API = "https://script.google.com/macros/s/AKfycbzLuf2OK5Kq4YwS3KgOe8U9XSJaJqtDJ_t_3y_0AygPxhGATg059Yxh5gBcIvLSzHPLtw/exec"
+SHEET_ID = "1WSC7xwTL6PlZU89w4JDI2Oybn4byk6zp41tmuIB4u-k" # ID da planilha Patrocinadores2026
 
 CHAVE_PIX_CELULAR = "81997752112"
 BENEFICIARIO_PIX = "Paróquia Nossa Senhora do Perpétuo Socorro"
@@ -46,12 +46,11 @@ if "dados_venda" not in st.session_state:
 if "mesa_selecionada" not in st.session_state:
     st.session_state.mesa_selecionada = None
 
-# Preços padrão (ou lidos da aba Parametros)
-VALOR_MESA = 200.0  # Ajuste conforme o valor real
-VALOR_CARTELA_BINGO = 20.0  # Dá direito às 4 rodadas do Bingo
+VALOR_MESA = 200.0
+VALOR_CARTELA_BINGO = 20.0
 
 st.markdown("<h1 style='text-align: center;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center;'>Venda de Mesas e Cartelas de Bingo Online</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center;'>Paróquia da Madalena - Venda de Mesas e Cartelas Online</p>", unsafe_allow_html=True)
 
 modulo = st.sidebar.radio("Navegação:", ["🪑 Reserva de Mesas", "🎯 Cartelas do Bingo Online (4 Prêmios)"])
 
@@ -62,9 +61,9 @@ if modulo == "🪑 Reserva de Mesas":
     if not st.session_state.pagamento_pendente:
         st.subheader("Mapa Físico das Mesas")
         
-        # Exibe a imagem oficial do Mapa das Mesas enviado (Mapa das Mesas.jpg)
-        URL_MAPA = "https://i.imgur.com/SEU_LINK_MAPA_FEIJOBINGO.jpg"  # Subir 'Mapa das Mesas.jpg' para o Imgur/PostImage
-        st.image(URL_MAPA, caption="Layout do FeijoBingo: Palco, Bares, Fichas, Barracas e Setores A, B, C e D", use_container_width=True)
+        # LINK DIRETO DA IMAGEM DO MAPA
+        URL_MAPA = "https://i.postimg.cc/mDxg7Csm/Mapa-das-Mesas.jpg"
+        st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Palco, Bares, Fichas, Barracas e Setores A, B, C e D", use_container_width=True)
         
         try:
             url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Mesas_FeijoBingo"
@@ -72,16 +71,14 @@ if modulo == "🪑 Reserva de Mesas":
             df_mesas["ID_Mesa"] = df_mesas["ID_Mesa"].astype(int)
             df_mesas["Status"] = df_mesas["Status"].fillna("Livre").astype(str)
         except Exception:
-            st.error("Erro ao carregar o status das mesas da planilha.")
+            st.error("Erro ao carregar o status das mesas da planilha. Verifique se a aba 'Mesas_FeijoBingo' foi criada no Google Sheets.")
             st.stop()
 
-        # Seleção amigável de Setor para facilitar a navegação em 366 mesas
         setor_escolhido = st.selectbox(
             "Selecione o Setor no Mapa:",
             ["Setor A (Frente Esquerda)", "Setor B (Frente Direita)", "Setor C (Fundo Esquerdo)", "Setor D (Fundo Direito)", "Passarela / Laterais"]
         )
         
-        # Mapeamento dos Intervalos de Mesas por Setor conforme a imagem do PDF enviado
         intervalos = {
             "Setor A (Frente Esquerda)": list(range(21, 95)),
             "Setor B (Frente Direita)": list(range(95, 172)),
@@ -94,7 +91,6 @@ if modulo == "🪑 Reserva de Mesas":
         
         st.write(f"### Mesas do {setor_escolhido} (R$ {VALOR_MESA:.2f}):")
         
-        # Renderização em grid de 6 colunas
         cols_per_row = 6
         for i in range(0, len(mesas_do_setor), cols_per_row):
             cols = st.columns(cols_per_row)
@@ -114,14 +110,13 @@ if modulo == "🪑 Reserva de Mesas":
                     else:
                         st.button(f"❌ {id_m:03d}", key=f"m_{id_m}", disabled=True, use_container_width=True)
 
-        # Formulário de Reserva
         if st.session_state.mesa_selecionada:
             st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}**")
             with st.form("form_mesa"):
                 nome = st.text_input("Nome Completo *")
                 whatsapp = st.text_input("WhatsApp com DDD *")
                 email = st.text_input("E-mail *")
-                sub = st.form_submit_button("Avançar para o Pix")
+                sub = st.form_submit_button("Avançar para o Pagamento")
                 
                 if sub and nome and whatsapp and email:
                     payload = {
@@ -132,20 +127,25 @@ if modulo == "🪑 Reserva de Mesas":
                         "comprador_email": email,
                         "valor_total": VALOR_MESA
                     }
-                    res = requests.post(URL_API, json=payload)
-                    if "Sucesso" in res.text or res.status_code == 200:
-                        st.session_state.dados_venda = {
-                            "tipo": "Mesa FeijoBingo",
-                            "item": f"Mesa Nº {st.session_state.mesa_selecionada:03d}",
-                            "nome": nome,
-                            "whatsapp": whatsapp,
-                            "email": email,
-                            "valor": VALOR_MESA,
-                            "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
-                        }
-                        st.session_state.pagamento_pendente = True
-                        st.session_state.mesa_selecionada = None
-                        st.rerun()
+                    try:
+                        res = requests.post(URL_API, json=payload)
+                        if "Sucesso" in res.text or res.status_code == 200:
+                            st.session_state.dados_venda = {
+                                "tipo": "Mesa FeijoBingo",
+                                "item": f"Mesa Nº {st.session_state.mesa_selecionada:03d}",
+                                "nome": nome,
+                                "whatsapp": whatsapp,
+                                "email": email,
+                                "valor": VALOR_MESA,
+                                "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
+                            }
+                            st.session_state.pagamento_pendente = True
+                            st.session_state.mesa_selecionada = None
+                            st.rerun()
+                        else:
+                            st.error("O servidor não processou o registro da mesa.")
+                    except Exception as err:
+                        st.error(f"Erro de comunicação: {err}")
 
 # ==========================================
 # MÓDULO 2: CARTELAS DE BINGO ONLINE
@@ -153,7 +153,7 @@ if modulo == "🪑 Reserva de Mesas":
 elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
     if not st.session_state.pagamento_pendente:
         st.subheader("Venda de Cartelas do Bingo Online")
-        st.info("💡 Cada cartela concorre a todos os 4 prêmios principais! Mesmo quem não puder comparecer presencialmente ao FeijoBingo concorrerá normalmente com o cadastro do seu nome e WhatsApp.")
+        st.info("💡 Cada cartela concorre a todos os 4 prêmios principais! Mesmo quem não puder comparecer presencialmente concorrerá normalmente com o cadastro do seu nome e WhatsApp.")
         
         qtd_cartelas = st.number_input("Quantidade de Cartelas desejadas:", min_value=1, max_value=50, value=1, step=1)
         valor_total_bingo = qtd_cartelas * VALOR_CARTELA_BINGO
@@ -176,22 +176,27 @@ elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
                     "comprador_email": email,
                     "valor_total": float(valor_total_bingo)
                 }
-                res = requests.post(URL_API, json=payload)
-                if "Sucesso" in res.text or res.status_code == 200:
-                    st.session_state.dados_venda = {
-                        "tipo": "Bingo Online",
-                        "item": f"{qtd_cartelas}x Cartela(s) do Bingo Online (4 Rodadas)",
-                        "nome": nome,
-                        "whatsapp": whatsapp,
-                        "email": email,
-                        "valor": valor_total_bingo,
-                        "cod_aut": f"FB26-BG-{int(datetime.datetime.now().timestamp())}"
-                    }
-                    st.session_state.pagamento_pendente = True
-                    st.rerun()
+                try:
+                    res = requests.post(URL_API, json=payload)
+                    if "Sucesso" in res.text or res.status_code == 200:
+                        st.session_state.dados_venda = {
+                            "tipo": "Bingo Online",
+                            "item": f"{qtd_cartelas}x Cartela(s) do Bingo Online (4 Rodadas)",
+                            "nome": nome,
+                            "whatsapp": whatsapp,
+                            "email": email,
+                            "valor": valor_total_bingo,
+                            "cod_aut": f"FB26-BG-{int(datetime.datetime.now().timestamp())}"
+                        }
+                        st.session_state.pagamento_pendente = True
+                        st.rerun()
+                    else:
+                        st.error("Erro interno ao gravar cartelas.")
+                except Exception as err:
+                    st.error(f"Erro de comunicação: {err}")
 
 # ==========================================
-# PAGAMENTO UNIFICADO
+# PAGAMENTO UNIFICADO VIA PIX
 # ==========================================
 if st.session_state.pagamento_pendente:
     venda = st.session_state.dados_venda
@@ -201,10 +206,6 @@ if st.session_state.pagamento_pendente:
     st.markdown(f"💰 **Valor Total: R$ {venda['valor']:.2f}**")
     st.code(CHAVE_PIX_CELULAR, language="text")
     
-    arquivo_comprovante = st.file_uploader("Anexe o comprovante Pix aqui (*):", type=["png", "jpg", "jpeg", "pdf"])
-    
-    if st.button("Concluir Pedido"):
-        st.success("✅ Pedido gravado com sucesso! A equipe paroquial validará seu comprovante.")
-        if st.button("Novo Pedido"):
-            st.session_state.pagamento_pendente = False
-            st.rerun()
+    if st.button("Voltar / Nova Operação"):
+        st.session_state.pagamento_pendente = False
+        st.rerun()
