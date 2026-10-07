@@ -33,10 +33,33 @@ st.markdown(
 
 # Endpoint do Google Apps Script e ID da Planilha Patrocinadores2026
 URL_API = "https://script.google.com/macros/s/AKfycbzLuf2OK5Kq4YwS3KgOe8U9XSJaJqtDJ_t_3y_0AygPxhGATg059Yxh5gBcIvLSzHPLtw/exec"
-SHEET_ID = "1WSC7xwTL6PlZU89w4JDI2Oybn4byk6zp41tmuIB4u-k" # ID da planilha Patrocinadores2026
+SHEET_ID = "1WSC7xwTL6PlZU89w4JDI2Oybn4byk6zp41tmuIB4u-k" # Planilha Patrocinadores2026
 
 CHAVE_PIX_CELULAR = "81997752112"
 BENEFICIARIO_PIX = "Paróquia Nossa Senhora do Perpétuo Socorro"
+
+# --- LEITURA DINÂMICA DOS VALORES DA ABA CONFIGURACOES ---
+@st.cache_data(ttl=60)
+def carregar_configuracoes_precos():
+    try:
+        url_cfg = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Configuracoes"
+        df_cfg = pd.read_csv(url_cfg)
+        
+        # Filtra a linha do ano 2026
+        df_2026 = df_cfg[df_cfg['Ano'].astype(str).str.strip() == "2026"]
+        
+        if not df_2026.empty:
+            v_mesa_ab = float(df_2026.iloc[0]['Valor Mesa AB'])
+            v_mesa_cd = float(df_2026.iloc[0]['Valor Mesa CD'])
+            v_cartela = float(df_2026.iloc[0]['Valor Cartela'])
+            v_combo = float(df_2026.iloc[0]['Valor Combo'])
+            return v_mesa_ab, v_mesa_cd, v_cartela, v_combo
+        else:
+            return 50.0, 30.0, 10.0, 80.0
+    except Exception as e:
+        return 50.0, 30.0, 10.0, 80.0
+
+VALOR_MESA_AB, VALOR_MESA_CD, VALOR_CARTELA, VALOR_COMBO = carregar_configuracoes_precos()
 
 # Session State
 if "pagamento_pendente" not in st.session_state:
@@ -45,9 +68,6 @@ if "dados_venda" not in st.session_state:
     st.session_state.dados_venda = {}
 if "mesa_selecionada" not in st.session_state:
     st.session_state.mesa_selecionada = None
-
-VALOR_MESA = 200.0
-VALOR_CARTELA_BINGO = 20.0
 
 st.markdown("<h1 style='text-align: center;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center;'>Paróquia da Madalena - Venda de Mesas e Cartelas Online</p>", unsafe_allow_html=True)
@@ -61,17 +81,19 @@ if modulo == "🪑 Reserva de Mesas":
     if not st.session_state.pagamento_pendente:
         st.subheader("Mapa Físico das Mesas")
         
-        # LINK DIRETO DA IMAGEM DO MAPA
-        URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
+        # IMAGEM DO MAPA FÍSICO
+        URL_MAPA = "https://i.postimg.cc/mDxg7Csm/Mapa-das-Mesas.jpg"
         st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Palco, Bares, Fichas, Barracas e Setores A, B, C e D", use_container_width=True)
         
         try:
             url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Mesas_FeijoBingo"
             df_mesas = pd.read_csv(url_csv)
-            df_mesas["ID_Mesa"] = df_mesas["ID_Mesa"].astype(int)
-            df_mesas["Status"] = df_mesas["Status"].fillna("Livre").astype(str)
-        except Exception:
-            st.error("Erro ao carregar o status das mesas da planilha. Verifique se a aba 'Mesas_FeijoBingo' foi criada no Google Sheets.")
+            
+            # Garantir limpeza de tipos e colunas exatas da imagem image_3929c5.png
+            df_mesas["ID_Mesa"] = pd.to_numeric(df_mesas["ID_Mesa"], errors='coerce').fillna(0).astype(int)
+            df_mesas["Status"] = df_mesas["Status"].fillna("").astype(str).str.strip()
+        except Exception as e:
+            st.error("Erro ao carregar o status das mesas da planilha. Verifique se a aba 'Mesas_FeijoBingo' está acessível.")
             st.stop()
 
         setor_escolhido = st.selectbox(
@@ -87,9 +109,15 @@ if modulo == "🪑 Reserva de Mesas":
             "Passarela / Laterais": list(range(1, 21))
         }
         
+        # Define o preço da mesa dinamicamente baseado na aba 'Configuracoes'
+        if "Setor A" in setor_escolhido or "Setor B" in setor_escolhido:
+            preco_mesa_atual = VALOR_MESA_AB
+        else:
+            preco_mesa_atual = VALOR_MESA_CD
+        
         mesas_do_setor = intervalos[setor_escolhido]
         
-        st.write(f"### Mesas do {setor_escolhido} (R$ {VALOR_MESA:.2f}):")
+        st.write(f"### Mesas do {setor_escolhido} (Valor: R$ {preco_mesa_atual:.2f}):")
         
         cols_per_row = 6
         for i in range(0, len(mesas_do_setor), cols_per_row):
@@ -97,10 +125,17 @@ if modulo == "🪑 Reserva de Mesas":
             chunk = mesas_do_setor[i:i + cols_per_row]
             for idx, id_m in enumerate(chunk):
                 dados_m = df_mesas[df_mesas["ID_Mesa"] == id_m]
-                status = dados_m.iloc[0]["Status"].strip().capitalize() if not dados_m.empty else "Livre"
+                
+                # Checagem rigorosa do Status na Coluna C (Livre, Reservada ou Vendida)
+                status = ""
+                if not dados_m.empty:
+                    status = str(dados_m.iloc[0]["Status"]).strip().capitalize()
+                
+                # Se a célula estiver vazia ou 'Livre', libera a mesa
+                is_livre = (status == "" or status == "Livre" or status == "Nan")
                 
                 with cols[idx]:
-                    if status == "Livre" or status == "":
+                    if is_livre:
                         if st.session_state.mesa_selecionada == id_m:
                             st.button(f"📌 {id_m:03d}", key=f"m_{id_m}", type="primary", use_container_width=True)
                         else:
@@ -108,10 +143,10 @@ if modulo == "🪑 Reserva de Mesas":
                                 st.session_state.mesa_selecionada = id_m
                                 st.rerun()
                     else:
-                        st.button(f"❌ {id_m:03d}", key=f"m_{id_m}", disabled=True, use_container_width=True)
+                        st.button(f"❌ {id_m:03d}", key=f"m_{id_m}", disabled=True, use_container_width=True, help=f"Mesa {status}")
 
         if st.session_state.mesa_selecionada:
-            st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}**")
+            st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}** (Valor: R$ {preco_mesa_atual:.2f})")
             with st.form("form_mesa"):
                 nome = st.text_input("Nome Completo *")
                 whatsapp = st.text_input("WhatsApp com DDD *")
@@ -122,28 +157,29 @@ if modulo == "🪑 Reserva de Mesas":
                     payload = {
                         "acao": "reservar_mesa_feijobingo",
                         "id_mesa": int(st.session_state.mesa_selecionada),
+                        "setor": setor_escolhido,
                         "comprador_nome": nome,
                         "comprador_whatsapp": whatsapp,
                         "comprador_email": email,
-                        "valor_total": VALOR_MESA
+                        "valor_total": float(preco_mesa_atual)
                     }
                     try:
                         res = requests.post(URL_API, json=payload)
                         if "Sucesso" in res.text or res.status_code == 200:
                             st.session_state.dados_venda = {
                                 "tipo": "Mesa FeijoBingo",
-                                "item": f"Mesa Nº {st.session_state.mesa_selecionada:03d}",
+                                "item": f"Mesa Nº {st.session_state.mesa_selecionada:03d} ({setor_escolhido})",
                                 "nome": nome,
                                 "whatsapp": whatsapp,
                                 "email": email,
-                                "valor": VALOR_MESA,
+                                "valor": preco_mesa_atual,
                                 "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
                             }
                             st.session_state.pagamento_pendente = True
                             st.session_state.mesa_selecionada = None
                             st.rerun()
                         else:
-                            st.error("O servidor não processou o registro da mesa.")
+                            st.error("O servidor paroquial não processou o registro da mesa.")
                     except Exception as err:
                         st.error(f"Erro de comunicação: {err}")
 
@@ -155,8 +191,10 @@ elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
         st.subheader("Venda de Cartelas do Bingo Online")
         st.info("💡 Cada cartela concorre a todos os 4 prêmios principais! Mesmo quem não puder comparecer presencialmente concorrerá normalmente com o cadastro do seu nome e WhatsApp.")
         
+        st.markdown(f"🎟️ **Valor Unitário da Cartela:** <span style='color:#27ae60; font-weight:bold;'>R$ {VALOR_CARTELA:.2f}</span>", unsafe_allow_html=True)
+        
         qtd_cartelas = st.number_input("Quantidade de Cartelas desejadas:", min_value=1, max_value=50, value=1, step=1)
-        valor_total_bingo = qtd_cartelas * VALOR_CARTELA_BINGO
+        valor_total_bingo = qtd_cartelas * VALOR_CARTELA
         
         st.markdown(f"### Total: <span style='color:#27ae60;'>R$ {valor_total_bingo:.2f}</span>", unsafe_allow_html=True)
         
