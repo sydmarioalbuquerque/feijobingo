@@ -32,8 +32,8 @@ st.markdown(
 )
 
 # Endpoint do Google Apps Script e ID da Planilha Patrocinadores2026
-URL_API = "https://script.google.com/macros/s/AKfycbzLuf2OK5Kq4YwS3KgOe8U9XSJaJqtDJ_t_3y_0AygPxhGATg059Yxh5gBcIvLSzHPLtw/exec"
-SHEET_ID = "1WSC7xwTL6PlZU89w4JDI2Oybn4byk6zp41tmuIB4u-k" # Planilha Patrocinadores2026
+URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQcIZfekMn8o_QFPP8jZy9JjdlbT5Xh68OmVUFOD/exec"
+SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0" # Planilha Patrocinadores2026
 
 CHAVE_PIX_CELULAR = "81997752112"
 BENEFICIARIO_PIX = "Paróquia Nossa Senhora do Perpétuo Socorro"
