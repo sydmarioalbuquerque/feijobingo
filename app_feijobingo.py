@@ -38,14 +38,25 @@ SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0" # Planilha Patrocinado
 CHAVE_PIX_CELULAR = "81997752112"
 BENEFICIARIO_PIX = "Paróquia Nossa Senhora do Perpétuo Socorro"
 
+# --- FUNÇÃO RESILIENTE PARA LER ABAS DO GOOGLE SHEETS ---
+def ler_aba_google_sheets(nome_aba):
+    url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
+    try:
+        df = pd.read_csv(url_csv)
+        df.columns = df.columns.str.strip() # Remove espaços extras nos nomes das colunas
+        return df
+    except Exception as e:
+        # Tenta rota alternativa sem gviz em caso de bloqueio temporário
+        url_alt = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&sheet={nome_aba}"
+        df = pd.read_csv(url_alt)
+        df.columns = df.columns.str.strip()
+        return df
+
 # --- LEITURA DINÂMICA DOS VALORES DA ABA CONFIGURACOES ---
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=30)
 def carregar_configuracoes_precos():
     try:
-        url_cfg = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Configuracoes"
-        df_cfg = pd.read_csv(url_cfg)
-        
-        # Filtra a linha do ano 2026
+        df_cfg = ler_aba_google_sheets("Configuracoes")
         df_2026 = df_cfg[df_cfg['Ano'].astype(str).str.strip() == "2026"]
         
         if not df_2026.empty:
@@ -56,7 +67,7 @@ def carregar_configuracoes_precos():
             return v_mesa_ab, v_mesa_cd, v_cartela, v_combo
         else:
             return 50.0, 30.0, 10.0, 80.0
-    except Exception as e:
+    except Exception:
         return 50.0, 30.0, 10.0, 80.0
 
 VALOR_MESA_AB, VALOR_MESA_CD, VALOR_CARTELA, VALOR_COMBO = carregar_configuracoes_precos()
@@ -86,14 +97,16 @@ if modulo == "🪑 Reserva de Mesas":
         st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Palco, Bares, Fichas, Barracas e Setores A, B, C e D", use_container_width=True)
         
         try:
-            url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Mesas_FeijoBingo"
-            df_mesas = pd.read_csv(url_csv)
-            
-            # Garantir limpeza de tipos e colunas exatas da imagem image_3929c5.png
+            df_mesas = ler_aba_google_sheets("Mesas_FeijoBingo")
             df_mesas["ID_Mesa"] = pd.to_numeric(df_mesas["ID_Mesa"], errors='coerce').fillna(0).astype(int)
-            df_mesas["Status"] = df_mesas["Status"].fillna("").astype(str).str.strip()
+            
+            # Se a coluna Status não existir por algum motivo de criação recente, inicializa
+            if "Status" not in df_mesas.columns:
+                df_mesas["Status"] = ""
+            else:
+                df_mesas["Status"] = df_mesas["Status"].fillna("").astype(str).str.strip()
         except Exception as e:
-            st.error("Erro ao carregar o status das mesas da planilha. Verifique se a aba 'Mesas_FeijoBingo' está acessível.")
+            st.error(f"Não foi possível ler a aba 'Mesas_FeijoBingo'. Certifique-se de que a planilha está compartilhada como 'Qualquer pessoa com o link pode ver'. Detalhe: {e}")
             st.stop()
 
         setor_escolhido = st.selectbox(
@@ -126,12 +139,10 @@ if modulo == "🪑 Reserva de Mesas":
             for idx, id_m in enumerate(chunk):
                 dados_m = df_mesas[df_mesas["ID_Mesa"] == id_m]
                 
-                # Checagem rigorosa do Status na Coluna C (Livre, Reservada ou Vendida)
                 status = ""
                 if not dados_m.empty:
                     status = str(dados_m.iloc[0]["Status"]).strip().capitalize()
                 
-                # Se a célula estiver vazia ou 'Livre', libera a mesa
                 is_livre = (status == "" or status == "Livre" or status == "Nan")
                 
                 with cols[idx]:
