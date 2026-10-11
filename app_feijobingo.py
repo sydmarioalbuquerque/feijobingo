@@ -13,8 +13,14 @@ try:
 except ImportError:
     st.error("Por favor, garanta que 'fpdf2' está listado no arquivo requirements.txt no GitHub.")
 
-# Configuração da Página
-st.set_page_config(page_title="FeijoBingo 2026 - Paróquia da Madalena", layout="centered")
+# --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONE DA IGREJA ---
+URL_LOGO_IGREJA = "https://i.imgur.com/k3okz8x.png"
+
+st.set_page_config(
+    page_title="FeijoBingo 2026 - Paróquia da Madalena", 
+    page_icon=URL_LOGO_IGREJA, 
+    layout="centered"
+)
 
 # CSS Responsivo para Celulares
 st.markdown(
@@ -33,20 +39,52 @@ st.markdown(
 
 # Endpoint do Google Apps Script e ID da Planilha Patrocinadores2026
 URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQcIZfekMn8o_QFPP8jZy9JjdlbT5Xh68OmVUFOD/exec"
-SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0" # Planilha Patrocinadores2026
+SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "81997752112"
 BENEFICIARIO_PIX = "Paróquia Nossa Senhora do Perpétuo Socorro"
+URL_CARTAO_CREDITO = "https://www.mercadopago.com.br" # Substitua pelo link de pagamento de cartão da paróquia
+
+# --- GERADOR DE PIX EMV COM VALOR DINÂMICO ---
+def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
+    nome_clean = nome[:25].upper()
+    cidade_clean = cidade[:15].upper()
+    str_valor = f"{valor:.2f}"
+    
+    gui = "0014br.gov.bcb.pix"
+    key_part = f"01{len(chave):02d}{chave}"
+    merchant_account = f"26{len(gui + key_part):02d}{gui}{key_part}"
+    
+    cat = "52040000"
+    curr = "5303986"
+    amount = f"54{len(str_valor):02d}{str_valor}"
+    country = "5802BR"
+    merchant_name = f"59{len(nome_clean):02d}{nome_clean}"
+    merchant_city = f"60{len(cidade_clean):02d}{cidade_clean}"
+    add_data = "62070503***"
+    
+    raw = f"000201{merchant_account}{cat}{curr}{amount}{country}{merchant_name}{merchant_city}{add_data}6304"
+    
+    # Cálculo do CRC16
+    crc = 0xFFFF
+    for char in raw:
+        crc ^= (ord(char) << 8)
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    crc_str = f"{crc:04X}"
+    return raw + crc_str
 
 # --- FUNÇÃO RESILIENTE PARA LER ABAS DO GOOGLE SHEETS ---
 def ler_aba_google_sheets(nome_aba):
     url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
     try:
         df = pd.read_csv(url_csv)
-        df.columns = df.columns.str.strip() # Remove espaços extras nos nomes das colunas
+        df.columns = df.columns.str.strip()
         return df
-    except Exception as e:
-        # Tenta rota alternativa sem gviz em caso de bloqueio temporário
+    except Exception:
         url_alt = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&sheet={nome_aba}"
         df = pd.read_csv(url_alt)
         df.columns = df.columns.str.strip()
@@ -72,7 +110,55 @@ def carregar_configuracoes_precos():
 
 VALOR_MESA_AB, VALOR_MESA_CD, VALOR_CARTELA, VALOR_COMBO = carregar_configuracoes_precos()
 
-# Session State
+# --- FUNÇÃO PARA GERAR RECIBO EM PDF ---
+def gerar_recibo_pdf(dados):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_line_width(0.5)
+    pdf.rect(10, 10, 190, 120)
+    
+    pdf.set_font("Arial", "B", 16)
+    pdf.set_text_color(180, 40, 20)
+    pdf.cell(190, 12, "COMPROVANTE DE RESERVA - FEIJOBINGO 2026", ln=True, align="C")
+    
+    pdf.set_font("Arial", "", 10)
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(190, 6, "Paróquia Nossa Senhora do Perpétuo Socorro - Madalena", ln=True, align="C")
+    pdf.ln(5)
+    
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(45, 8, "Comprador(a):", ln=False)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(145, 8, str(dados['nome']), ln=True)
+    
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(45, 8, "WhatsApp / E-mail:", ln=False)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(145, 8, f"{dados['whatsapp']} | {dados['email']}", ln=True)
+    
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(45, 8, "Item Adquirido:", ln=False)
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(145, 8, str(dados['item']), ln=True)
+    
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(45, 8, "Valor Total:", ln=False)
+    pdf.set_font("Arial", "", 11)
+    pdf.cell(145, 8, f"R$ {dados['valor']:.2f}", ln=True)
+
+    pdf.set_font("Arial", "B", 11)
+    pdf.cell(45, 8, "Código do Pedido:", ln=False)
+    pdf.set_font("Arial", "", 10)
+    pdf.cell(145, 8, str(dados['cod_aut']), ln=True)
+    
+    pdf.ln(8)
+    pdf.set_font("Arial", "I", 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(190, 5, "*A validação do acesso e entrega das cartelas será confirmada após a conferência bancária.", ln=True, align="C")
+    pdf.cell(190, 5, "Guarde este comprovante temporário com você.", ln=True, align="C")
+    return bytes(pdf.output())
+
+# --- INICIALIZAÇÃO DE SESSION STATE ---
 if "pagamento_pendente" not in st.session_state:
     st.session_state.pagamento_pendente = False
 if "dados_venda" not in st.session_state:
@@ -80,8 +166,18 @@ if "dados_venda" not in st.session_state:
 if "mesa_selecionada" not in st.session_state:
     st.session_state.mesa_selecionada = None
 
-st.markdown("<h1 style='text-align: center;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center;'>Paróquia da Madalena - Venda de Mesas e Cartelas Online</p>", unsafe_allow_html=True)
+# --- EXIBIÇÃO DO LOGO CENTRAL E TÍTULO ---
+st.markdown(
+    f"""
+    <div style="text-align: center;">
+        <img src="{URL_LOGO_IGREJA}" style="max-width: 130px; margin-bottom: 10px;">
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+st.markdown("<h1 style='text-align: center; margin-top:0;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-weight: bold; color: #555;'>Paróquia da Madalena - Venda Online de Mesas e Cartelas</p>", unsafe_allow_html=True)
 
 modulo = st.sidebar.radio("Navegação:", ["🪑 Reserva de Mesas", "🎯 Cartelas do Bingo Online (4 Prêmios)"])
 
@@ -92,7 +188,6 @@ if modulo == "🪑 Reserva de Mesas":
     if not st.session_state.pagamento_pendente:
         st.subheader("Mapa Físico das Mesas")
         
-        # IMAGEM DO MAPA FÍSICO
         URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
         st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Palco, Bares, Fichas, Barracas e Setores A, B, C e D", use_container_width=True)
         
@@ -100,13 +195,12 @@ if modulo == "🪑 Reserva de Mesas":
             df_mesas = ler_aba_google_sheets("Mesas_FeijoBingo")
             df_mesas["ID_Mesa"] = pd.to_numeric(df_mesas["ID_Mesa"], errors='coerce').fillna(0).astype(int)
             
-            # Se a coluna Status não existir por algum motivo de criação recente, inicializa
             if "Status" not in df_mesas.columns:
                 df_mesas["Status"] = ""
             else:
                 df_mesas["Status"] = df_mesas["Status"].fillna("").astype(str).str.strip()
         except Exception as e:
-            st.error(f"Não foi possível ler a aba 'Mesas_FeijoBingo'. Certifique-se de que a planilha está compartilhada como 'Qualquer pessoa com o link pode ver'. Detalhe: {e}")
+            st.error("Erro ao ler a aba 'Mesas_FeijoBingo'. Verifique se a planilha está aberta para leitura pública.")
             st.stop()
 
         setor_escolhido = st.selectbox(
@@ -122,15 +216,12 @@ if modulo == "🪑 Reserva de Mesas":
             "Passarela / Laterais": list(range(1, 21))
         }
         
-        # Define o preço da mesa dinamicamente baseado na aba 'Configuracoes'
-        if "Setor A" in setor_escolhido or "Setor B" in setor_escolhido:
-            preco_mesa_atual = VALOR_MESA_AB
-        else:
-            preco_mesa_atual = VALOR_MESA_CD
+        is_setor_ab = ("Setor A" in setor_escolhido or "Setor B" in setor_escolhido)
+        preco_mesa_base = VALOR_MESA_AB if is_setor_ab else VALOR_MESA_CD
         
         mesas_do_setor = intervalos[setor_escolhido]
         
-        st.write(f"### Mesas do {setor_escolhido} (Valor: R$ {preco_mesa_atual:.2f}):")
+        st.write(f"### Mesas do {setor_escolhido} (Valor Base: R$ {preco_mesa_base:.2f}):")
         
         cols_per_row = 6
         for i in range(0, len(mesas_do_setor), cols_per_row):
@@ -157,7 +248,30 @@ if modulo == "🪑 Reserva de Mesas":
                         st.button(f"❌ {id_m:03d}", key=f"m_{id_m}", disabled=True, use_container_width=True, help=f"Mesa {status}")
 
         if st.session_state.mesa_selecionada:
-            st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}** (Valor: R$ {preco_mesa_atual:.2f})")
+            st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}**")
+            
+            # --- SELEÇÃO DE COMBO PARA SETORES A E B ---
+            tipo_compra = "Apenas Mesa"
+            preco_final = preco_mesa_base
+            
+            if is_setor_ab:
+                st.info("🔥 **OFERTA ESPECIAL COMBO FEIJOBINGO:**")
+                tipo_compra = st.radio(
+                    "Escolha a sua modalidade de compra:",
+                    [
+                        f"🪑 Apenas a Mesa {st.session_state.mesa_selecionada:03d} (R$ {VALOR_MESA_AB:.2f})",
+                        f"🎁 COMBO PROMO: Mesa {st.session_state.mesa_selecionada:03d} + 4 Cartelas do Bingo (R$ {VALOR_COMBO:.2f})"
+                    ]
+                )
+                if "COMBO" in tipo_compra:
+                    preco_final = VALOR_COMBO
+                    descricao_item = f"COMBO PROMO: Mesa Nº {st.session_state.mesa_selecionada:03d} + 4 Cartelas do Bingo"
+                else:
+                    preco_final = VALOR_MESA_AB
+                    descricao_item = f"Mesa Nº {st.session_state.mesa_selecionada:03d} ({setor_escolhido})"
+            else:
+                descricao_item = f"Mesa Nº {st.session_state.mesa_selecionada:03d} ({setor_escolhido})"
+
             with st.form("form_mesa"):
                 nome = st.text_input("Nome Completo *")
                 whatsapp = st.text_input("WhatsApp com DDD *")
@@ -172,18 +286,19 @@ if modulo == "🪑 Reserva de Mesas":
                         "comprador_nome": nome,
                         "comprador_whatsapp": whatsapp,
                         "comprador_email": email,
-                        "valor_total": float(preco_mesa_atual)
+                        "valor_total": float(preco_final),
+                        "item_descricao": descricao_item
                     }
                     try:
                         res = requests.post(URL_API, json=payload)
                         if "Sucesso" in res.text or res.status_code == 200:
                             st.session_state.dados_venda = {
                                 "tipo": "Mesa FeijoBingo",
-                                "item": f"Mesa Nº {st.session_state.mesa_selecionada:03d} ({setor_escolhido})",
+                                "item": descricao_item,
                                 "nome": nome,
                                 "whatsapp": whatsapp,
                                 "email": email,
-                                "valor": preco_mesa_atual,
+                                "valor": preco_final,
                                 "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
                             }
                             st.session_state.pagamento_pendente = True
@@ -214,7 +329,7 @@ elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
             whatsapp = st.text_input("WhatsApp (para contato em caso de prêmio) *")
             email = st.text_input("E-mail para envio dos números *")
             
-            sub_bingo = st.form_submit_button("Gerar Cartelas e Ir para o Pix")
+            sub_bingo = st.form_submit_button("Gerar Cartelas e Ir para o Pagamento")
             
             if sub_bingo and nome and whatsapp and email:
                 payload = {
@@ -245,16 +360,61 @@ elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
                     st.error(f"Erro de comunicação: {err}")
 
 # ==========================================
-# PAGAMENTO UNIFICADO VIA PIX
+# PAGAMENTO UNIFICADO (PIX + CARTÃO)
 # ==========================================
 if st.session_state.pagamento_pendente:
     venda = st.session_state.dados_venda
     st.markdown("---")
-    st.subheader("📌 Finalização e Pagamento via Pix")
-    st.write(f"Comprador: **{venda['nome']}** | Item: **{venda['item']}**")
-    st.markdown(f"💰 **Valor Total: R$ {venda['valor']:.2f}**")
-    st.code(CHAVE_PIX_CELULAR, language="text")
+    st.subheader("📌 Finalização e Pagamento")
+    st.write(f"Comprador: **{venda['nome']}**")
+    st.write(f"Item: **{venda['item']}**")
+    st.markdown(f"💰 **Valor Total a Pagar: R$ {venda['valor']:.2f}**")
     
-    if st.button("Voltar / Nova Operação"):
+    metodo_pagamento = st.radio("Escolha a forma de pagamento:", ["📱 Pix com Valor Exato (Mais Rápido)", "💳 Cartão de Crédito"])
+    
+    if "Pix" in metodo_pagamento:
+        st.markdown("---")
+        # Gera o Pix copia e cola com valor embutido
+        payload_pix_completo = gerar_payload_pix(CHAVE_PIX_CELULAR, BENEFICIARIO_PIX, venda['valor'])
+        
+        col_qr, col_txt = st.columns([4, 6])
+        with col_qr:
+            url_qr = f"https://api.qrserver.com/v1/create-qr-code/?size=220x220&data={requests.utils.quote(payload_pix_completo)}"
+            st.image(url_qr, caption="Escaneie no app do banco")
+        
+        with col_txt:
+            st.markdown("#### 📱 Pix Copia e Cola (Valor Automático)")
+            st.caption("Abaixo está o código Pix já configurado com o valor exato da sua compra:")
+            st.code(payload_pix_completo, language="text")
+            
+            st.markdown("📱 **Ou Chave Celular Direta:**")
+            st.code(CHAVE_PIX_CELULAR, language="text")
+            st.write(f"👤 Beneficiário: **{BENEFICIARIO_PIX}**")
+
+    else:
+        st.markdown("---")
+        st.markdown("#### 💳 Pagamento via Cartão de Crédito")
+        st.write("Clique no botão abaixo para ser redirecionado à página de pagamento seguro por cartão de crédito:")
+        st.markdown(
+            f'<a href="{URL_CARTAO_CREDITO}" target="_blank" style="display:inline-block; background-color:#27ae60; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold;">👉 Pagar R$ {venda["valor"]:.2f} com Cartão de Crédito</a>',
+            unsafe_allow_html=True
+        )
+
+    st.markdown("---")
+    st.subheader("📄 Baixar Comprovante / Recibo da Reserva")
+    
+    try:
+        pdf_bytes = gerar_recibo_pdf(venda)
+        st.download_button(
+            label="📥 Baixar Comprovante em PDF",
+            data=pdf_bytes,
+            file_name=f"Comprovante_FeijoBingo_{venda['nome'].replace(' ', '_')}.pdf",
+            mime="application/pdf"
+        )
+    except Exception as pdf_err:
+        st.error(f"Erro ao gerar PDF: {pdf_err}")
+
+    if st.button("Realizar Nova Operação / Voltar"):
         st.session_state.pagamento_pendente = False
+        st.session_state.dados_venda = {}
         st.rerun()
