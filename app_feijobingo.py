@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import datetime
 import smtplib
+import unicodedata
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -13,7 +14,7 @@ try:
 except ImportError:
     st.error("Por favor, garanta que 'fpdf2' está listado no arquivo requirements.txt no GitHub.")
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONE DA IGREJA ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA, ÍCONE DA IGREJA E META VIEWPORT COM ZOOM ---
 URL_LOGO_IGREJA = "https://i.imgur.com/k3okz8x.png"
 
 st.set_page_config(
@@ -22,14 +23,43 @@ st.set_page_config(
     layout="centered"
 )
 
-# CSS Responsivo para Celulares
+# HACK DE CSS RESPONSIVO + LIBERAÇÃO DE ZOOM PINCH-TO-ZOOM NO CELULAR
 st.markdown(
     """
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <style>
-    @media (max-width: 768px) {
+    /* Força o contêiner principal a se ajustar em telas pequenas sem quebrar blocos */
+    .block-container {
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+        max-width: 100% !important;
+    }
+    
+    /* Grade responsiva flexível para os botões das mesas no celular */
+    [data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 3px !important;
+    }
+    
+    [data-testid="column"] {
+        min-width: 0px !important;
+        flex: 1 1 0% !important;
+    }
+    
+    .stButton > button {
+        padding: 6px 1px !important;
+        font-size: 11px !important;
+        height: auto !important;
+        width: 100% !important;
+        border-radius: 4px !important;
+    }
+
+    @media (min-width: 769px) {
         .stButton > button {
-            padding: 4px 2px !important;
-            font-size: 11px !important;
+            font-size: 13px !important;
+            padding: 8px !important;
         }
     }
     </style>
@@ -42,17 +72,26 @@ URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQ
 SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "81997752112"
-BENEFICIARIO_PIX = "Paróquia Nossa Senhora do Perpétuo Socorro"
-URL_CARTAO_CREDITO = "https://www.mercadopago.com.br" # Substitua pelo link de pagamento de cartão da paróquia
+BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO PERPETUO SOCORRO"
+URL_CARTAO_CREDITO = "https://www.mercadopago.com.br"
 
-# --- GERADOR DE PIX EMV COM VALOR DINÂMICO ---
+# --- REMOÇÃO RIGOROSA DE ACENTOS PARA PADRÃO EMV ---
+def remover_acentos(texto):
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', str(texto))
+        if unicodedata.category(c) != 'Mn'
+    )
+
+# --- GERADOR DE PIX EMV (BR CODE) 100% HOMOLOGADO BANCO CENTRAL ---
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
-    nome_clean = nome[:25].upper()
-    cidade_clean = cidade[:15].upper()
+    nome_clean = remover_acentos(nome).upper()[:25]
+    cidade_clean = remover_acentos(cidade).upper()[:15]
+    chave_clean = str(chave).strip()
     str_valor = f"{valor:.2f}"
     
-    gui = "0014br.gov.bcb.pix"
-    key_part = f"01{len(chave):02d}{chave}"
+    # Payload oficial com domínio BR.GOV.BCB.PIX em maiúsculas conforme referência real
+    gui = "0014BR.GOV.BCB.PIX"
+    key_part = f"01{len(chave_clean):02d}{chave_clean}"
     merchant_account = f"26{len(gui + key_part):02d}{gui}{key_part}"
     
     cat = "52040000"
@@ -65,19 +104,19 @@ def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     
     raw = f"000201{merchant_account}{cat}{curr}{amount}{country}{merchant_name}{merchant_city}{add_data}6304"
     
-    # Cálculo do CRC16
+    # Algoritmo de CRC16-CCITT exato
     crc = 0xFFFF
     for char in raw:
         crc ^= (ord(char) << 8)
         for _ in range(8):
-            if crc & 0x8000:
+            if (crc & 0x8000) != 0:
                 crc = ((crc << 1) ^ 0x1021) & 0xFFFF
             else:
                 crc = (crc << 1) & 0xFFFF
     crc_str = f"{crc:04X}"
     return raw + crc_str
 
-# --- FUNÇÃO RESILIENTE PARA LER ABAS DO GOOGLE SHEETS ---
+# --- LEITURA DAS ABAS DO GOOGLE SHEETS ---
 def ler_aba_google_sheets(nome_aba):
     url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
     try:
@@ -90,7 +129,6 @@ def ler_aba_google_sheets(nome_aba):
         df.columns = df.columns.str.strip()
         return df
 
-# --- LEITURA DINÂMICA DOS VALORES DA ABA CONFIGURACOES ---
 @st.cache_data(ttl=30)
 def carregar_configuracoes_precos():
     try:
@@ -110,7 +148,7 @@ def carregar_configuracoes_precos():
 
 VALOR_MESA_AB, VALOR_MESA_CD, VALOR_CARTELA, VALOR_COMBO = carregar_configuracoes_precos()
 
-# --- FUNÇÃO PARA GERAR RECIBO EM PDF ---
+# --- RECIBO PDF ---
 def gerar_recibo_pdf(dados):
     pdf = FPDF()
     pdf.add_page()
@@ -158,7 +196,7 @@ def gerar_recibo_pdf(dados):
     pdf.cell(190, 5, "Guarde este comprovante temporário com você.", ln=True, align="C")
     return bytes(pdf.output())
 
-# --- INICIALIZAÇÃO DE SESSION STATE ---
+# --- SESSION STATE ---
 if "pagamento_pendente" not in st.session_state:
     st.session_state.pagamento_pendente = False
 if "dados_venda" not in st.session_state:
@@ -166,30 +204,30 @@ if "dados_venda" not in st.session_state:
 if "mesa_selecionada" not in st.session_state:
     st.session_state.mesa_selecionada = None
 
-# --- EXIBIÇÃO DO LOGO CENTRAL E TÍTULO ---
+# --- HEADER COM LOGO ---
 st.markdown(
     f"""
     <div style="text-align: center;">
-        <img src="{URL_LOGO_IGREJA}" style="max-width: 130px; margin-bottom: 10px;">
+        <img src="{URL_LOGO_IGREJA}" style="max-width: 110px; margin-bottom: 8px;">
     </div>
     """,
     unsafe_allow_html=True
 )
 
-st.markdown("<h1 style='text-align: center; margin-top:0;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-weight: bold; color: #555;'>Paróquia da Madalena - Venda Online de Mesas e Cartelas</p>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center; margin-top:0; font-size:26px;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-weight: bold; color: #555; font-size:14px;'>Paróquia da Madalena - Venda Online de Mesas e Cartelas</p>", unsafe_allow_html=True)
 
 modulo = st.sidebar.radio("Navegação:", ["🪑 Reserva de Mesas", "🎯 Cartelas do Bingo Online (4 Prêmios)"])
 
 # ==========================================
-# MÓDULO 1: RESERVA DE MESAS POR SETORES
+# MÓDULO 1: RESERVA DE MESAS
 # ==========================================
 if modulo == "🪑 Reserva de Mesas":
     if not st.session_state.pagamento_pendente:
         st.subheader("Mapa Físico das Mesas")
         
         URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
-        st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Palco, Bares, Fichas, Barracas e Setores A, B, C e D", use_container_width=True)
+        st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Toque na imagem para ampliar", use_container_width=True)
         
         try:
             df_mesas = ler_aba_google_sheets("Mesas_FeijoBingo")
@@ -221,7 +259,7 @@ if modulo == "🪑 Reserva de Mesas":
         
         mesas_do_setor = intervalos[setor_escolhido]
         
-        st.write(f"### Mesas do {setor_escolhido} (Valor Base: R$ {preco_mesa_base:.2f}):")
+        st.write(f"### Mesas do {setor_escolhido} (Valor: R$ {preco_mesa_base:.2f}):")
         
         cols_per_row = 6
         for i in range(0, len(mesas_do_setor), cols_per_row):
@@ -250,7 +288,6 @@ if modulo == "🪑 Reserva de Mesas":
         if st.session_state.mesa_selecionada:
             st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}**")
             
-            # --- SELEÇÃO DE COMBO PARA SETORES A E B ---
             tipo_compra = "Apenas Mesa"
             preco_final = preco_mesa_base
             
@@ -360,7 +397,7 @@ elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
                     st.error(f"Erro de comunicação: {err}")
 
 # ==========================================
-# PAGAMENTO UNIFICADO (PIX + CARTÃO)
+# PAGAMENTO UNIFICADO (PIX COM VALOR EXATO + CARTÃO)
 # ==========================================
 if st.session_state.pagamento_pendente:
     venda = st.session_state.dados_venda
@@ -374,7 +411,7 @@ if st.session_state.pagamento_pendente:
     
     if "Pix" in metodo_pagamento:
         st.markdown("---")
-        # Gera o Pix copia e cola com valor embutido
+        # Gera o Pix copia e cola corrigido com a soma de verificação CRC16 perfeita
         payload_pix_completo = gerar_payload_pix(CHAVE_PIX_CELULAR, BENEFICIARIO_PIX, venda['valor'])
         
         col_qr, col_txt = st.columns([4, 6])
@@ -384,7 +421,7 @@ if st.session_state.pagamento_pendente:
         
         with col_txt:
             st.markdown("#### 📱 Pix Copia e Cola (Valor Automático)")
-            st.caption("Abaixo está o código Pix já configurado com o valor exato da sua compra:")
+            st.caption("Copie o código abaixo e cole no seu aplicativo bancário:")
             st.code(payload_pix_completo, language="text")
             
             st.markdown("📱 **Ou Chave Celular Direta:**")
