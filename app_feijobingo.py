@@ -4,6 +4,7 @@ import requests
 import datetime
 import smtplib
 import unicodedata
+import streamlit.components.v1 as components
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -14,7 +15,7 @@ try:
 except ImportError:
     st.error("Por favor, garanta que 'fpdf2' está listado no arquivo requirements.txt no GitHub.")
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA, ÍCONE DA IGREJA E META VIEWPORT COM ZOOM ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONE DA IGREJA ---
 URL_LOGO_IGREJA = "https://i.imgur.com/k3okz8x.png"
 
 st.set_page_config(
@@ -23,19 +24,29 @@ st.set_page_config(
     layout="centered"
 )
 
-# HACK DE CSS RESPONSIVO + LIBERAÇÃO DE ZOOM PINCH-TO-ZOOM NO CELULAR
+# --- INJEÇÃO DE HTML PARA LIBERAR ZOOM EM DISPOSITIVOS MÓVEIS ---
+components.html(
+    """
+    <script>
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes';
+        document.getElementsByTagName('head')[0].appendChild(meta);
+    </script>
+    """,
+    height=0,
+)
+
+# --- INJEÇÃO DE CSS RESPONSIVO LIMPO (SEM TEXTO VISÍVEL NA TELA) ---
 st.markdown(
     """
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <style>
-    /* Força o contêiner principal a se ajustar em telas pequenas sem quebrar blocos */
     .block-container {
         padding-left: 0.8rem !important;
         padding-right: 0.8rem !important;
         max-width: 100% !important;
     }
     
-    /* Grade responsiva flexível para os botões das mesas no celular */
     [data-testid="stHorizontalBlock"] {
         display: flex !important;
         flex-direction: row !important;
@@ -89,7 +100,6 @@ def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     chave_clean = str(chave).strip()
     str_valor = f"{valor:.2f}"
     
-    # Payload oficial com domínio BR.GOV.BCB.PIX em maiúsculas conforme referência real
     gui = "0014BR.GOV.BCB.PIX"
     key_part = f"01{len(chave_clean):02d}{chave_clean}"
     merchant_account = f"26{len(gui + key_part):02d}{gui}{key_part}"
@@ -104,7 +114,6 @@ def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     
     raw = f"000201{merchant_account}{cat}{curr}{amount}{country}{merchant_name}{merchant_city}{add_data}6304"
     
-    # Algoritmo de CRC16-CCITT exato
     crc = 0xFFFF
     for char in raw:
         crc ^= (ord(char) << 8)
@@ -397,7 +406,7 @@ elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
                     st.error(f"Erro de comunicação: {err}")
 
 # ==========================================
-# PAGAMENTO UNIFICADO (PIX COM VALOR EXATO + CARTÃO)
+# PAGAMENTO UNIFICADO
 # ==========================================
 if st.session_state.pagamento_pendente:
     venda = st.session_state.dados_venda
@@ -411,7 +420,6 @@ if st.session_state.pagamento_pendente:
     
     if "Pix" in metodo_pagamento:
         st.markdown("---")
-        # Gera o Pix copia e cola corrigido com a soma de verificação CRC16 perfeita
         payload_pix_completo = gerar_payload_pix(CHAVE_PIX_CELULAR, BENEFICIARIO_PIX, venda['valor'])
         
         col_qr, col_txt = st.columns([4, 6])
