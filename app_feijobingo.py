@@ -82,7 +82,6 @@ SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "+5581997752112"
 BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
-URL_CARTAO_CREDITO = "https://www.mercadopago.com.br"
 
 # VALORES ATUALIZADOS PASCOM 2026
 VALOR_COMBO_MESA = 100.0   # Mesa + 4 Cartelas
@@ -108,7 +107,7 @@ def calcular_crc16(payload):
                 crc = (crc << 1) & 0xFFFF
     return f"{crc:04X}"
 
-# GERADOR DE PIX EMV (BR CODE) CORRIGIDO
+# GERADOR DE PIX EMV (BR CODE)
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     str_valor = f"{valor:.2f}"
     merchant_account = "26360014br.gov.bcb.pix0114+5581997752112"
@@ -136,20 +135,22 @@ def ler_aba_google_sheets(nome_aba):
         df.columns = df.columns.str.strip()
         return df
 
-# LEITURA DAS CARTELAS JÁ OCUPADAS/VENDIDAS
+# LEITURA DAS CARTELAS JÁ OCUPADAS/VENDIDAS NA FAIXA DE 101 A 1000
 def obter_cartelas_ocupadas():
     try:
         df_b = ler_aba_google_sheets("Cartelas_Bingo")
-        if "Num_Cartela" in df_b.columns:
-            nums = df_b["Num_Cartela"].dropna().astype(str).str.split(",").explode().str.strip()
+        if "Comprador_Nome" in df_b.columns and "Num_Cartela" in df_b.columns:
+            # Filtra onde já tem comprador preenchido
+            df_vendidas = df_b[df_b["Comprador_Nome"].notna() & (df_b["Comprador_Nome"].astype(str).str.strip() != "")]
+            nums = df_vendidas["Num_Cartela"].astype(str).str.split(",").explode().str.strip()
             return set(pd.to_numeric(nums, errors='coerce').dropna().astype(int).tolist())
     except Exception:
         pass
     return set()
 
-# GERADOR DE NÚMEROS DE CARTELAS ALEATÓRIAS NÃO REPETIDAS
-def gerar_numeros_cartelas_aleatorios(qtd, ocupadas, limite_max=2000):
-    disponiveis = [n for n in range(1, limite_max + 1) if n not in ocupadas]
+# GERADOR DE NÚMEROS DE CARTELAS EXCLUSIVAMENTE NA FAIXA DE 101 A 1000
+def gerar_numeros_cartelas_aleatorios(qtd, ocupadas):
+    disponiveis = [n for n in range(101, 1001) if n not in ocupadas]
     if len(disponiveis) < qtd:
         return disponiveis
     return random.sample(disponiveis, qtd)
@@ -265,7 +266,7 @@ with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da
             4. 📺 **4º Prêmio:** Smart TV
             5. 💰 **5º Prêmio:** **R$ 2.000,00** em dinheiro!
             
-            *💡 Todas as cartelas vendidas online concorrem a todas as 5 rodadas!*
+            *💡 Vendas de cartelas pelo app restritas do nº 101 ao nº 1000.*
             """
         )
 
@@ -330,7 +331,7 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
         if st.session_state.mesa_selecionada:
             st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}** (Combo Mesa + 4 Cartelas por R$ 100,00)")
             
-            st.markdown("#### 🎯 Escolha das 4 Cartelas do Bingo:")
+            st.markdown("#### 🎯 Escolha das 4 Cartelas do Bingo (Faixa nº 101 ao nº 1000):")
             modo_cartela = st.radio("Como deseja definir os números das suas 4 cartelas?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
             
             cartelas_ocupadas = obter_cartelas_ocupadas()
@@ -338,10 +339,10 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
             
             if modo_cartela == "Escolher os Números Manualmente":
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: num1 = st.number_input("Cartela 1:", min_value=1, max_value=2000, value=1, step=1)
-                with c2: num2 = st.number_input("Cartela 2:", min_value=1, max_value=2000, value=2, step=1)
-                with c3: num3 = st.number_input("Cartela 3:", min_value=1, max_value=2000, value=3, step=1)
-                with c4: num4 = st.number_input("Cartela 4:", min_value=1, max_value=2000, value=4, step=1)
+                with c1: num1 = st.number_input("Cartela 1:", min_value=101, max_value=1000, value=101, step=1)
+                with c2: num2 = st.number_input("Cartela 2:", min_value=101, max_value=1000, value=102, step=1)
+                with c3: num3 = st.number_input("Cartela 3:", min_value=101, max_value=1000, value=103, step=1)
+                with c4: num4 = st.number_input("Cartela 4:", min_value=101, max_value=1000, value=104, step=1)
                 cartelas_definidas = [int(num1), int(num2), int(num3), int(num4)]
             else:
                 cartelas_definidas = gerar_numeros_cartelas_aleatorios(4, cartelas_ocupadas)
@@ -394,16 +395,16 @@ elif modulo == "🎟️ Entrada Individual + 1 Cartela (R$ 20)":
         valor_total_ind = qtd_entradas * VALOR_ENTRADA_IND
         st.markdown(f"### Total: <span style='color:#27ae60;'>R$ {valor_total_ind:.2f}</span>", unsafe_allow_html=True)
         
-        modo_cartela = st.radio(f"Como deseja definir os números da(s) {qtd_entradas} cartela(s)?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
+        modo_cartela = st.radio(f"Como deseja definir os números da(s) {qtd_entradas} cartela(s)? (Faixa nº 101 ao nº 1000)", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
         cartelas_ocupadas = obter_cartelas_ocupadas()
         cartelas_definidas = []
         
         if modo_cartela == "Escolher os Números Manualmente":
-            st.caption("Digite os números desejados para cada cartela:")
+            st.caption("Digite os números desejados para cada cartela (101 a 1000):")
             cols = st.columns(min(int(qtd_entradas), 4))
             for idx in range(int(qtd_entradas)):
                 with cols[idx % 4]:
-                    val = st.number_input(f"Cartela {idx+1}:", min_value=1, max_value=2000, value=idx+1, key=f"ind_c_{idx}")
+                    val = st.number_input(f"Cartela {idx+1}:", min_value=101, max_value=1000, value=101+idx, key=f"ind_c_{idx}")
                     cartelas_definidas.append(int(val))
         else:
             cartelas_definidas = gerar_numeros_cartelas_aleatorios(int(qtd_entradas), cartelas_ocupadas)
@@ -449,6 +450,7 @@ elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
     if not st.session_state.pagamento_pendente:
         st.subheader("Venda de Cartela Bingo Avulsa")
         st.markdown(f"🎟️ **Valor Unitário:** <span style='color:#27ae60; font-weight:bold;'>R$ {VALOR_CARTELA_AVULSA:.2f}</span>", unsafe_allow_html=True)
+        st.caption("📌 Vendas via aplicativo disponíveis apenas para o intervalo das cartelas nº 101 ao nº 1000.")
         
         qtd_cartelas = st.number_input("Quantidade de Cartelas Avulsas:", min_value=1, max_value=50, value=1, step=1)
         valor_total_bingo = qtd_cartelas * VALOR_CARTELA_AVULSA
@@ -462,7 +464,7 @@ elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
             cols = st.columns(min(int(qtd_cartelas), 4))
             for idx in range(int(qtd_cartelas)):
                 with cols[idx % 4]:
-                    val = st.number_input(f"Cartela {idx+1}:", min_value=1, max_value=2000, value=idx+1, key=f"av_c_{idx}")
+                    val = st.number_input(f"Cartela {idx+1}:", min_value=101, max_value=1000, value=101+idx, key=f"av_c_{idx}")
                     cartelas_definidas.append(int(val))
         else:
             cartelas_definidas = gerar_numeros_cartelas_aleatorios(int(qtd_cartelas), cartelas_ocupadas)
@@ -514,7 +516,7 @@ if st.session_state.pagamento_pendente:
         st.markdown(f"🎟️ **Número(s) da(s) Cartela(s): <span style='color:#27ae60;'>{venda['cartelas']}</span>**", unsafe_allow_html=True)
     st.markdown(f"💰 **Valor Total a Pagar: R$ {venda['valor']:.2f}**")
     
-    metodo_pagamento = st.radio("Escolha a forma de pagamento:", ["📱 Pix com Valor Exato (Mais Rápido)", "💳 Cartão de Crédito"])
+    metodo_pagamento = st.radio("Escolha a forma de pagamento:", ["📱 Pix com Valor Exato (Mais Rápido)", "💳 Cartão de Crédito (Presencial)"])
     
     if "Pix" in metodo_pagamento:
         st.markdown("---")
@@ -545,7 +547,6 @@ if st.session_state.pagamento_pendente:
                 st.warning("Por favor, selecione e anexe o arquivo do comprovante antes de confirmar.")
             else:
                 with st.spinner("Gravando reserva e enviando comprovante..."):
-                    # Converter o arquivo enviado para Base64 para envio via JSON
                     bytes_file = comprovante_file.read()
                     b64_file = base64.b64encode(bytes_file).decode('utf-8')
                     
@@ -554,38 +555,37 @@ if st.session_state.pagamento_pendente:
                     payload_envio = {
                         "acao": "gravar_reserva_completa",
                         "tipo": venda["tipo"],
-                        "id_mesa": venda.get("id_mesa", ""),
+                        "id_mesa": str(venda.get("id_mesa", "")),
                         "setor": venda.get("setor", ""),
                         "Comprador_Nome": venda["nome"],
                         "Comprador_WhatsApp": venda["whatsapp"],
                         "Comprador_Email": venda["email"],
                         "Data_Venda": data_hoje,
                         "Valor_Pago": float(venda["valor"]),
-                        "Num_Cartela": venda.get("cartelas", ""),
+                        "Num_Cartela": str(venda.get("cartelas", "")),
                         "Status": "Reservada",
                         "Comprovante_Nome": comprovante_file.name,
                         "Comprovante_Base64": b64_file
                     }
                     
                     try:
-                        res = requests.post(URL_API, json=payload_envio)
+                        # Envio via POST tratando redirecionamento do Apps Script
+                        headers = {'Content-Type': 'application/json'}
+                        res = requests.post(URL_API, json=payload_envio, headers=headers)
+                        
                         if res.status_code == 200 or "Sucesso" in res.text:
                             st.balloons()
                             st.success("🎉 Reserva e Comprovante registrados com sucesso na planilha!")
-                            st.session_state.pagamento_confirmado = True
+                            st.info("📧 Um e-mail de notificação foi enviado para a equipe de validação PASCOM.")
                         else:
-                            st.error(f"Ocorreu um problema no Apps Script: {res.text}")
+                            st.error(f"Erro ao salvar: {res.text}")
                     except Exception as err:
                         st.error(f"Erro ao conectar com o Google Apps Script: {err}")
 
     else:
         st.markdown("---")
         st.markdown("#### 💳 Pagamento via Cartão de Crédito")
-        st.write("Clique no botão abaixo para ser redirecionado à página de pagamento seguro por cartão de crédito:")
-        st.markdown(
-            f'<a href="{URL_CARTAO_CREDITO}" target="_blank" style="display:inline-block; background-color:#27ae60; color:white; padding:12px 20px; text-decoration:none; border-radius:8px; font-weight:bold;">👉 Pagar R$ {venda["valor"]:.2f} com Cartão de Crédito</a>',
-            unsafe_allow_html=True
-        )
+        st.warning("⚠️ **Aviso:** As compras via Cartão de Crédito estão sendo realizadas **exclusivamente de forma presencial** na Secretaria da Paróquia ou ao final das Missas.")
 
     st.markdown("---")
     st.subheader("📄 Baixar Comprovante / Recibo da Reserva")
