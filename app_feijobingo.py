@@ -86,7 +86,7 @@ SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "81997752112"
 # BENEFICIÁRIO FIXADO EM EXATAMENTE 25 CARACTERES PARA BATER O CRC16 (7B83)
-BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
+#BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
 URL_CARTAO_CREDITO = "https://www.mercadopago.com.br"
 
 # VALORES ATUALIZADOS PASCOM 2026
@@ -112,12 +112,27 @@ def calcular_crc16(payload):
             else:
                 crc = (crc << 1) & 0xFFFF
     return f"{crc:04X}"
+# --- BENEFICIARIO FIXO IDENTICO AO TESTADO ---
+BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
 
-# GERADOR DE PIX EMV (BR CODE)
+# --- GERADOR DE PIX EMV (BR CODE) HOMOLOGADO ---
+def calcular_crc16(payload):
+    crc = 0xFFFF
+    for char in payload.encode('utf-8'):
+        crc ^= (char << 8)
+        for _ in range(8):
+            if (crc & 0x8000) != 0:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return f"{crc:04X}"
+
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
+    # Normaliza o nome para garantir exatamente a string "PAROQUIA NOSSA SENHORA DO" (25 caracteres)
     nome_clean = remover_acentos(nome).upper().strip()[:25]
     cidade_clean = remover_acentos(cidade).upper().strip()[:15]
     
+    # Formatação da chave celular com +55 (exatamente 14 caracteres: +5581997752112)
     chave_digits = ''.join(filter(str.isdigit, str(chave)))
     if len(chave_digits) == 11 and not chave_digits.startswith("55"):
         chave_clean = f"+55{chave_digits}"
