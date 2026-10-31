@@ -18,7 +18,7 @@ except ImportError:
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONE DA IGREJA ---
 URL_LOGO_IGREJA = "https://i.imgur.com/k3okz8x.png"
-URL_CARTELA_OFICIAL = "https://i.postimg.cc/44NnB3vH/WhatsApp-Image-2026-10-31-at-16-26-43.jpg"
+URL_CARTELA_OFICIAL = "https://i.postimg.cc/dtbd3x9T/Whats-App-Image-2026-10-31-at-16-26-43.jpg"
 
 st.set_page_config(
     page_title="FeijoBingo 2026 - Paróquia da Madalena", 
