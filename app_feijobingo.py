@@ -4,6 +4,7 @@ import requests
 import datetime
 import smtplib
 import unicodedata
+import random
 import streamlit.components.v1 as components
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -24,7 +25,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- INJEÇÃO DE HTML PARA LIBERAR ZOOM EM DISPOSITIVOS MÓVEIS ---
+# INJEÇÃO HTML PARA VIEWPORT COM ZOOM EM CELULARES
 components.html(
     """
     <script>
@@ -37,7 +38,7 @@ components.html(
     height=0,
 )
 
-# --- INJEÇÃO DE CSS RESPONSIVO LIMPO (SEM TEXTO VISÍVEL NA TELA) ---
+# CSS RESPONSIVO LIMPO
 st.markdown(
     """
     <style>
@@ -78,7 +79,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# Endpoint do Google Apps Script e ID da Planilha Patrocinadores2026
+# ENDPOINTS E PARÂMETROS
 URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQcIZfekMn8o_QFPP8jZy9JjdlbT5Xh68OmVUFOD/exec"
 SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
@@ -86,14 +87,19 @@ CHAVE_PIX_CELULAR = "81997752112"
 BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO PERPETUO SOCORRO"
 URL_CARTAO_CREDITO = "https://www.mercadopago.com.br"
 
-# --- REMOÇÃO RIGOROSA DE ACENTOS PARA PADRÃO EMV ---
+# VALORES ATUALIZADOS DOS PRODUTOS PASCOM 2026
+VALOR_COMBO_MESA = 100.0   # Mesa + 4 Cartelas
+VALOR_ENTRADA_IND = 20.0   # Entrada Individual + 1 Cartela
+VALOR_CARTELA_AVULSA = 10.0 # Cartela Bingo Avulsa
+
+# REMOÇÃO DE ACENTOS PARA PIX EMV
 def remover_acentos(texto):
     return ''.join(
         c for c in unicodedata.normalize('NFD', str(texto))
         if unicodedata.category(c) != 'Mn'
     )
 
-# --- GERADOR DE PIX EMV (BR CODE) 100% HOMOLOGADO BANCO CENTRAL ---
+# GERADOR DE PIX EMV (BR CODE)
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     nome_clean = remover_acentos(nome).upper()[:25]
     cidade_clean = remover_acentos(cidade).upper()[:15]
@@ -125,7 +131,7 @@ def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     crc_str = f"{crc:04X}"
     return raw + crc_str
 
-# --- LEITURA DAS ABAS DO GOOGLE SHEETS ---
+# LEITURA DE ABAS GOOGLE SHEETS
 def ler_aba_google_sheets(nome_aba):
     url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
     try:
@@ -138,31 +144,30 @@ def ler_aba_google_sheets(nome_aba):
         df.columns = df.columns.str.strip()
         return df
 
-@st.cache_data(ttl=30)
-def carregar_configuracoes_precos():
+# LEITURA DAS CARTELAS JÁ OCUPADAS/VENDIDAS NA PLANILHA
+def obter_cartelas_ocupadas():
     try:
-        df_cfg = ler_aba_google_sheets("Configuracoes")
-        df_2026 = df_cfg[df_cfg['Ano'].astype(str).str.strip() == "2026"]
-        
-        if not df_2026.empty:
-            v_mesa_ab = float(df_2026.iloc[0]['Valor Mesa AB'])
-            v_mesa_cd = float(df_2026.iloc[0]['Valor Mesa CD'])
-            v_cartela = float(df_2026.iloc[0]['Valor Cartela'])
-            v_combo = float(df_2026.iloc[0]['Valor Combo'])
-            return v_mesa_ab, v_mesa_cd, v_cartela, v_combo
-        else:
-            return 50.0, 30.0, 10.0, 80.0
+        df_b = ler_aba_google_sheets("Cartelas_Bingo")
+        if "Num_Cartela" in df_b.columns:
+            nums = df_b["Num_Cartela"].dropna().astype(str).str.split(",").explode().str.strip()
+            return set(pd.to_numeric(nums, errors='coerce').dropna().astype(int).tolist())
     except Exception:
-        return 50.0, 30.0, 10.0, 80.0
+        pass
+    return set()
 
-VALOR_MESA_AB, VALOR_MESA_CD, VALOR_CARTELA, VALOR_COMBO = carregar_configuracoes_precos()
+# GERADOR DE NÚMEROS DE CARTELAS ALEATÓRIAS NÃO REPETIDAS
+def gerar_numeros_cartelas_aleatorios(qtd, ocupadas, limite_max=2000):
+    disponiveis = [n for n in range(1, limite_max + 1) if n not in ocupadas]
+    if len(disponiveis) < qtd:
+        return disponiveis
+    return random.sample(disponiveis, qtd)
 
-# --- RECIBO PDF ---
+# GERADOR DE RECIBO PDF
 def gerar_recibo_pdf(dados):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_line_width(0.5)
-    pdf.rect(10, 10, 190, 120)
+    pdf.rect(10, 10, 190, 125)
     
     pdf.set_font("Arial", "B", 16)
     pdf.set_text_color(180, 40, 20)
@@ -171,41 +176,49 @@ def gerar_recibo_pdf(dados):
     pdf.set_font("Arial", "", 10)
     pdf.set_text_color(0, 0, 0)
     pdf.cell(190, 6, "Paróquia Nossa Senhora do Perpétuo Socorro - Madalena", ln=True, align="C")
-    pdf.ln(5)
+    pdf.ln(4)
     
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(45, 8, "Comprador(a):", ln=False)
+    pdf.cell(45, 7, "Comprador(a):", ln=False)
     pdf.set_font("Arial", "", 11)
-    pdf.cell(145, 8, str(dados['nome']), ln=True)
+    pdf.cell(145, 7, str(dados['nome']), ln=True)
     
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(45, 8, "WhatsApp / E-mail:", ln=False)
+    pdf.cell(45, 7, "WhatsApp / E-mail:", ln=False)
     pdf.set_font("Arial", "", 11)
-    pdf.cell(145, 8, f"{dados['whatsapp']} | {dados['email']}", ln=True)
+    pdf.cell(145, 7, f"{dados['whatsapp']} | {dados['email']}", ln=True)
     
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(45, 8, "Item Adquirido:", ln=False)
+    pdf.cell(45, 7, "Item Adquirido:", ln=False)
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(145, 8, str(dados['item']), ln=True)
+    pdf.cell(145, 7, str(dados['item']), ln=True)
+
+    if dados.get("cartelas"):
+        pdf.set_font("Arial", "B", 11)
+        pdf.cell(45, 7, "Cartelas Vinc.:", ln=False)
+        pdf.set_font("Arial", "B", 11)
+        pdf.set_text_color(39, 174, 96)
+        pdf.cell(145, 7, f"Nº {dados['cartelas']}", ln=True)
+        pdf.set_text_color(0, 0, 0)
     
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(45, 8, "Valor Total:", ln=False)
+    pdf.cell(45, 7, "Valor Total:", ln=False)
     pdf.set_font("Arial", "", 11)
-    pdf.cell(145, 8, f"R$ {dados['valor']:.2f}", ln=True)
+    pdf.cell(145, 7, f"R$ {dados['valor']:.2f}", ln=True)
 
     pdf.set_font("Arial", "B", 11)
-    pdf.cell(45, 8, "Código do Pedido:", ln=False)
+    pdf.cell(45, 7, "Código do Pedido:", ln=False)
     pdf.set_font("Arial", "", 10)
-    pdf.cell(145, 8, str(dados['cod_aut']), ln=True)
+    pdf.cell(145, 7, str(dados['cod_aut']), ln=True)
     
-    pdf.ln(8)
+    pdf.ln(6)
     pdf.set_font("Arial", "I", 9)
     pdf.set_text_color(100, 100, 100)
-    pdf.cell(190, 5, "*A validação do acesso e entrega das cartelas será confirmada após a conferência bancária.", ln=True, align="C")
+    pdf.cell(190, 5, "*A validação do acesso e entrega das cartelas será confirmada após conferência bancária.", ln=True, align="C")
     pdf.cell(190, 5, "Guarde este comprovante temporário com você.", ln=True, align="C")
     return bytes(pdf.output())
 
-# --- SESSION STATE ---
+# SESSION STATE
 if "pagamento_pendente" not in st.session_state:
     st.session_state.pagamento_pendente = False
 if "dados_venda" not in st.session_state:
@@ -213,7 +226,7 @@ if "dados_venda" not in st.session_state:
 if "mesa_selecionada" not in st.session_state:
     st.session_state.mesa_selecionada = None
 
-# --- HEADER COM LOGO ---
+# HEADER COM LOGO
 st.markdown(
     f"""
     <div style="text-align: center;">
@@ -224,16 +237,20 @@ st.markdown(
 )
 
 st.markdown("<h1 style='text-align: center; margin-top:0; font-size:26px;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-weight: bold; color: #555; font-size:14px;'>Paróquia da Madalena - Venda Online de Mesas e Cartelas</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-weight: bold; color: #555; font-size:14px;'>Paróquia da Madalena - Venda Online Oficial</p>", unsafe_allow_html=True)
 
-modulo = st.sidebar.radio("Navegação:", ["🪑 Reserva de Mesas", "🎯 Cartelas do Bingo Online (4 Prêmios)"])
+modulo = st.sidebar.radio(
+    "Navegação:", 
+    ["🪑 Combo Mesa + 4 Cartelas (R$ 100)", "🎟️ Entrada Individual + 1 Cartela (R$ 20)", "🎯 Cartela Bingo Avulsa (R$ 10)"]
+)
 
-# ==========================================
-# MÓDULO 1: RESERVA DE MESAS
-# ==========================================
-if modulo == "🪑 Reserva de Mesas":
+# =========================================================
+# MÓDULO 1: COMBO MESA + 4 CARTELAS (R$ 100,00 UNIFICADO)
+# =========================================================
+if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
     if not st.session_state.pagamento_pendente:
-        st.subheader("Mapa Físico das Mesas")
+        st.subheader("Reserva de Mesa (Inclui 4 Cartelas do Bingo)")
+        st.success("🎉 Todas as mesas possuem o mesmo valor promocional de **R$ 100,00** e já garantem **4 Cartelas do Bingo**!")
         
         URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
         st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Toque na imagem para ampliar", use_container_width=True)
@@ -241,13 +258,12 @@ if modulo == "🪑 Reserva de Mesas":
         try:
             df_mesas = ler_aba_google_sheets("Mesas_FeijoBingo")
             df_mesas["ID_Mesa"] = pd.to_numeric(df_mesas["ID_Mesa"], errors='coerce').fillna(0).astype(int)
-            
             if "Status" not in df_mesas.columns:
                 df_mesas["Status"] = ""
             else:
                 df_mesas["Status"] = df_mesas["Status"].fillna("").astype(str).str.strip()
-        except Exception as e:
-            st.error("Erro ao ler a aba 'Mesas_FeijoBingo'. Verifique se a planilha está aberta para leitura pública.")
+        except Exception:
+            st.error("Erro ao ler a aba 'Mesas_FeijoBingo'. Verifique a aba no Google Sheets.")
             st.stop()
 
         setor_escolhido = st.selectbox(
@@ -263,12 +279,8 @@ if modulo == "🪑 Reserva de Mesas":
             "Passarela / Laterais": list(range(1, 21))
         }
         
-        is_setor_ab = ("Setor A" in setor_escolhido or "Setor B" in setor_escolhido)
-        preco_mesa_base = VALOR_MESA_AB if is_setor_ab else VALOR_MESA_CD
-        
         mesas_do_setor = intervalos[setor_escolhido]
-        
-        st.write(f"### Mesas do {setor_escolhido} (Valor: R$ {preco_mesa_base:.2f}):")
+        st.write(f"### Mesas do {setor_escolhido}:")
         
         cols_per_row = 6
         for i in range(0, len(mesas_do_setor), cols_per_row):
@@ -276,11 +288,7 @@ if modulo == "🪑 Reserva de Mesas":
             chunk = mesas_do_setor[i:i + cols_per_row]
             for idx, id_m in enumerate(chunk):
                 dados_m = df_mesas[df_mesas["ID_Mesa"] == id_m]
-                
-                status = ""
-                if not dados_m.empty:
-                    status = str(dados_m.iloc[0]["Status"]).strip().capitalize()
-                
+                status = str(dados_m.iloc[0]["Status"]).strip().capitalize() if not dados_m.empty else ""
                 is_livre = (status == "" or status == "Livre" or status == "Nan")
                 
                 with cols[idx]:
@@ -295,28 +303,24 @@ if modulo == "🪑 Reserva de Mesas":
                         st.button(f"❌ {id_m:03d}", key=f"m_{id_m}", disabled=True, use_container_width=True, help=f"Mesa {status}")
 
         if st.session_state.mesa_selecionada:
-            st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}**")
+            st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}** (Combo Mesa + 4 Cartelas por R$ 100,00)")
             
-            tipo_compra = "Apenas Mesa"
-            preco_final = preco_mesa_base
+            st.markdown("#### 🎯 Escolha das 4 Cartelas do Bingo:")
+            modo_cartela = st.radio("Como deseja definir os números das suas 4 cartelas?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
             
-            if is_setor_ab:
-                st.info("🔥 **OFERTA ESPECIAL COMBO FEIJOBINGO:**")
-                tipo_compra = st.radio(
-                    "Escolha a sua modalidade de compra:",
-                    [
-                        f"🪑 Apenas a Mesa {st.session_state.mesa_selecionada:03d} (R$ {VALOR_MESA_AB:.2f})",
-                        f"🎁 COMBO PROMO: Mesa {st.session_state.mesa_selecionada:03d} + 4 Cartelas do Bingo (R$ {VALOR_COMBO:.2f})"
-                    ]
-                )
-                if "COMBO" in tipo_compra:
-                    preco_final = VALOR_COMBO
-                    descricao_item = f"COMBO PROMO: Mesa Nº {st.session_state.mesa_selecionada:03d} + 4 Cartelas do Bingo"
-                else:
-                    preco_final = VALOR_MESA_AB
-                    descricao_item = f"Mesa Nº {st.session_state.mesa_selecionada:03d} ({setor_escolhido})"
+            cartelas_ocupadas = obter_cartelas_ocupadas()
+            cartelas_definidas = []
+            
+            if modo_cartela == "Escolher os Números Manualmente":
+                c1, c2, c3, c4 = st.columns(4)
+                with c1: num1 = st.number_input("Cartela 1:", min_value=1, max_value=2000, value=1, step=1)
+                with c2: num2 = st.number_input("Cartela 2:", min_value=1, max_value=2000, value=2, step=1)
+                with c3: num3 = st.number_input("Cartela 3:", min_value=1, max_value=2000, value=3, step=1)
+                with c4: num4 = st.number_input("Cartela 4:", min_value=1, max_value=2000, value=4, step=1)
+                cartelas_definidas = [int(num1), int(num2), int(num3), int(num4)]
             else:
-                descricao_item = f"Mesa Nº {st.session_state.mesa_selecionada:03d} ({setor_escolhido})"
+                cartelas_definidas = gerar_numeros_cartelas_aleatorios(4, cartelas_ocupadas)
+                st.info(f"Cartelas Geradas: **{', '.join(map(str, cartelas_definidas))}**")
 
             with st.form("form_mesa"):
                 nome = st.text_input("Nome Completo *")
@@ -325,6 +329,19 @@ if modulo == "🪑 Reserva de Mesas":
                 sub = st.form_submit_button("Avançar para o Pagamento")
                 
                 if sub and nome and whatsapp and email:
+                    # Validação de Duplicidade
+                    if len(set(cartelas_definidas)) < 4:
+                        st.error("Não escolha números de cartela repetidos para o mesmo combo.")
+                        st.stop()
+                    
+                    duplicadas = [n for n in cartelas_definidas if n in cartelas_ocupadas]
+                    if duplicadas:
+                        st.error(f"A(s) cartela(s) {duplicadas} já foi(ram) reservada(s) por outra pessoa. Escolha outro(s) número(s).")
+                        st.stop()
+
+                    str_cartelas = ", ".join(map(str, cartelas_definidas))
+                    desc_item = f"Combo Mesa Nº {st.session_state.mesa_selecionada:03d} + 4 Cartelas ({str_cartelas})"
+                    
                     payload = {
                         "acao": "reservar_mesa_feijobingo",
                         "id_mesa": int(st.session_state.mesa_selecionada),
@@ -332,70 +349,171 @@ if modulo == "🪑 Reserva de Mesas":
                         "comprador_nome": nome,
                         "comprador_whatsapp": whatsapp,
                         "comprador_email": email,
-                        "valor_total": float(preco_final),
-                        "item_descricao": descricao_item
+                        "valor_total": float(VALOR_COMBO_MESA),
+                        "item_descricao": desc_item,
+                        "num_cartelas": str_cartelas
                     }
                     try:
                         res = requests.post(URL_API, json=payload)
                         if "Sucesso" in res.text or res.status_code == 200:
                             st.session_state.dados_venda = {
                                 "tipo": "Mesa FeijoBingo",
-                                "item": descricao_item,
+                                "item": desc_item,
                                 "nome": nome,
                                 "whatsapp": whatsapp,
                                 "email": email,
-                                "valor": preco_final,
+                                "valor": VALOR_COMBO_MESA,
+                                "cartelas": str_cartelas,
                                 "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
                             }
                             st.session_state.pagamento_pendente = True
                             st.session_state.mesa_selecionada = None
                             st.rerun()
                         else:
-                            st.error("O servidor paroquial não processou o registro da mesa.")
+                            st.error("O servidor não processou o registro da mesa.")
                     except Exception as err:
                         st.error(f"Erro de comunicação: {err}")
 
-# ==========================================
-# MÓDULO 2: CARTELAS DE BINGO ONLINE
-# ==========================================
-elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
+# =========================================================
+# MÓDULO 2: ENTRADA INDIVIDUAL + 1 CARTELA (R$ 20,00)
+# =========================================================
+elif modulo == "🎟️ Entrada Individual + 1 Cartela (R$ 20)":
     if not st.session_state.pagamento_pendente:
-        st.subheader("Venda de Cartelas do Bingo Online")
-        st.info("💡 Cada cartela concorre a todos os 4 prêmios principais! Mesmo quem não puder comparecer presencialmente concorrerá normalmente com o cadastro do seu nome e WhatsApp.")
+        st.subheader("Entrada Individual (Inclui 1 Cartela do Bingo)")
+        st.markdown(f"🎟️ **Valor Unitário:** <span style='color:#27ae60; font-weight:bold;'>R$ {VALOR_ENTRADA_IND:.2f}</span>", unsafe_allow_html=True)
         
-        st.markdown(f"🎟️ **Valor Unitário da Cartela:** <span style='color:#27ae60; font-weight:bold;'>R$ {VALOR_CARTELA:.2f}</span>", unsafe_allow_html=True)
+        qtd_entradas = st.number_input("Quantidade de Ingressos Individuais:", min_value=1, max_value=20, value=1, step=1)
+        valor_total_ind = qtd_entradas * VALOR_ENTRADA_IND
+        st.markdown(f"### Total: <span style='color:#27ae60;'>R$ {valor_total_ind:.2f}</span>", unsafe_allow_html=True)
         
-        qtd_cartelas = st.number_input("Quantidade de Cartelas desejadas:", min_value=1, max_value=50, value=1, step=1)
-        valor_total_bingo = qtd_cartelas * VALOR_CARTELA
+        modo_cartela = st.radio(f"Como deseja definir os números da(s) {qtd_entradas} cartela(s)?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
+        cartelas_ocupadas = obter_cartelas_ocupadas()
+        cartelas_definidas = []
         
+        if modo_cartela == "Escolher os Números Manualmente":
+            st.caption("Digite os números desejados para cada cartela:")
+            cols = st.columns(min(int(qtd_entradas), 4))
+            for idx in range(int(qtd_entradas)):
+                with cols[idx % 4]:
+                    val = st.number_input(f"Cartela {idx+1}:", min_value=1, max_value=2000, value=idx+1, key=f"ind_c_{idx}")
+                    cartelas_definidas.append(int(val))
+        else:
+            cartelas_definidas = gerar_numeros_cartelas_aleatorios(int(qtd_entradas), cartelas_ocupadas)
+            st.info(f"Cartela(s) Gerada(s): **{', '.join(map(str, cartelas_definidas))}**")
+
+        with st.form("form_entrada_ind"):
+            nome = st.text_input("Nome Completo do Titular *")
+            whatsapp = st.text_input("WhatsApp com DDD *")
+            email = st.text_input("E-mail *")
+            sub_ind = st.form_submit_button("Avançar para o Pagamento")
+            
+            if sub_ind and nome and whatsapp and email:
+                if len(set(cartelas_definidas)) < int(qtd_entradas):
+                    st.error("Não insira números de cartela repetidos.")
+                    st.stop()
+                    
+                duplicadas = [n for n in cartelas_definidas if n in cartelas_ocupadas]
+                if duplicadas:
+                    st.error(f"A(s) cartela(s) {duplicadas} já foi(ram) reservada(s). Escolha outro(s) número(s).")
+                    st.stop()
+
+                str_cartelas = ", ".join(map(str, cartelas_definidas))
+                desc_item = f"{qtd_entradas}x Entrada Individual + Cartela(s) ({str_cartelas})"
+                
+                payload = {
+                    "acao": "comprar_entrada_individual",
+                    "qtd": int(qtd_entradas),
+                    "comprador_nome": nome,
+                    "comprador_whatsapp": whatsapp,
+                    "comprador_email": email,
+                    "valor_total": float(valor_total_ind),
+                    "num_cartelas": str_cartelas
+                }
+                try:
+                    res = requests.post(URL_API, json=payload)
+                    if "Sucesso" in res.text or res.status_code == 200:
+                        st.session_state.dados_venda = {
+                            "tipo": "Entrada Individual",
+                            "item": desc_item,
+                            "nome": nome,
+                            "whatsapp": whatsapp,
+                            "email": email,
+                            "valor": valor_total_ind,
+                            "cartelas": str_cartelas,
+                            "cod_aut": f"FB26-IND-{int(datetime.datetime.now().timestamp())}"
+                        }
+                        st.session_state.pagamento_pendente = True
+                        st.rerun()
+                    else:
+                        st.error("Erro ao registrar entrada individual.")
+                except Exception as err:
+                    st.error(f"Erro de comunicação: {err}")
+
+# =========================================================
+# MÓDULO 3: CARTELA BINGO AVULSA (R$ 10,00)
+# =========================================================
+elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
+    if not st.session_state.pagamento_pendente:
+        st.subheader("Venda de Cartela Bingo Avulsa")
+        st.markdown(f"🎟️ **Valor Unitário:** <span style='color:#27ae60; font-weight:bold;'>R$ {VALOR_CARTELA_AVULSA:.2f}</span>", unsafe_allow_html=True)
+        
+        qtd_cartelas = st.number_input("Quantidade de Cartelas Avulsas:", min_value=1, max_value=50, value=1, step=1)
+        valor_total_bingo = qtd_cartelas * VALOR_CARTELA_AVULSA
         st.markdown(f"### Total: <span style='color:#27ae60;'>R$ {valor_total_bingo:.2f}</span>", unsafe_allow_html=True)
         
+        modo_cartela = st.radio(f"Como deseja definir a(s) {qtd_cartelas} cartela(s)?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
+        cartelas_ocupadas = obter_cartelas_ocupadas()
+        cartelas_definidas = []
+        
+        if modo_cartela == "Escolher os Números Manualmente":
+            cols = st.columns(min(int(qtd_cartelas), 4))
+            for idx in range(int(qtd_cartelas)):
+                with cols[idx % 4]:
+                    val = st.number_input(f"Cartela {idx+1}:", min_value=1, max_value=2000, value=idx+1, key=f"av_c_{idx}")
+                    cartelas_definidas.append(int(val))
+        else:
+            cartelas_definidas = gerar_numeros_cartelas_aleatorios(int(qtd_cartelas), cartelas_ocupadas)
+            st.info(f"Cartela(s) Gerada(s): **{', '.join(map(str, cartelas_definidas))}**")
+
         with st.form("form_bingo"):
-            nome = st.text_input("Nome Completo do Titular das Cartelas *")
-            whatsapp = st.text_input("WhatsApp (para contato em caso de prêmio) *")
-            email = st.text_input("E-mail para envio dos números *")
-            
+            nome = st.text_input("Nome Completo do Titular *")
+            whatsapp = st.text_input("WhatsApp (para contato de prêmios) *")
+            email = st.text_input("E-mail *")
             sub_bingo = st.form_submit_button("Gerar Cartelas e Ir para o Pagamento")
             
             if sub_bingo and nome and whatsapp and email:
+                if len(set(cartelas_definidas)) < int(qtd_cartelas):
+                    st.error("Não insira números repetidos.")
+                    st.stop()
+                    
+                duplicadas = [n for n in cartelas_definidas if n in cartelas_ocupadas]
+                if duplicadas:
+                    st.error(f"A(s) cartela(s) {duplicadas} já foi(ram) reservada(s). Escolha outro(s) número(s).")
+                    st.stop()
+
+                str_cartelas = ", ".join(map(str, cartelas_definidas))
+                desc_item = f"{qtd_cartelas}x Cartela(s) Bingo Avulsa ({str_cartelas})"
+                
                 payload = {
                     "acao": "comprar_cartela_bingo",
                     "qtd_cartelas": int(qtd_cartelas),
                     "comprador_nome": nome,
                     "comprador_whatsapp": whatsapp,
                     "comprador_email": email,
-                    "valor_total": float(valor_total_bingo)
+                    "valor_total": float(valor_total_bingo),
+                    "num_cartelas": str_cartelas
                 }
                 try:
                     res = requests.post(URL_API, json=payload)
                     if "Sucesso" in res.text or res.status_code == 200:
                         st.session_state.dados_venda = {
                             "tipo": "Bingo Online",
-                            "item": f"{qtd_cartelas}x Cartela(s) do Bingo Online (4 Rodadas)",
+                            "item": desc_item,
                             "nome": nome,
                             "whatsapp": whatsapp,
                             "email": email,
                             "valor": valor_total_bingo,
+                            "cartelas": str_cartelas,
                             "cod_aut": f"FB26-BG-{int(datetime.datetime.now().timestamp())}"
                         }
                         st.session_state.pagamento_pendente = True
@@ -405,15 +523,17 @@ elif modulo == "🎯 Cartelas do Bingo Online (4 Prêmios)":
                 except Exception as err:
                     st.error(f"Erro de comunicação: {err}")
 
-# ==========================================
-# PAGAMENTO UNIFICADO
-# ==========================================
+# =========================================================
+# PAGAMENTO UNIFICADO (PIX COM VALOR EXATO + CARTÃO)
+# =========================================================
 if st.session_state.pagamento_pendente:
     venda = st.session_state.dados_venda
     st.markdown("---")
     st.subheader("📌 Finalização e Pagamento")
     st.write(f"Comprador: **{venda['nome']}**")
-    st.write(f"Item: **{venda['item']}**")
+    st.write(f"Item Adquirido: **{venda['item']}**")
+    if venda.get("cartelas"):
+        st.markdown(f"🎟️ **Número(s) da(s) Cartela(s): <span style='color:#27ae60;'>{venda['cartelas']}</span>**", unsafe_allow_html=True)
     st.markdown(f"💰 **Valor Total a Pagar: R$ {venda['valor']:.2f}**")
     
     metodo_pagamento = st.radio("Escolha a forma de pagamento:", ["📱 Pix com Valor Exato (Mais Rápido)", "💳 Cartão de Crédito"])
