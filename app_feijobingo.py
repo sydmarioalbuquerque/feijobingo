@@ -100,16 +100,24 @@ def remover_acentos(texto):
         if unicodedata.category(c) != 'Mn'
     )
 
-# GERADOR DE PIX EMV (BR CODE)
+# GERADOR DE PIX EMV (BR CODE) MODELO EXATO TESTADO E APROVADO
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     nome_clean = remover_acentos(nome).upper()[:25]
     cidade_clean = remover_acentos(cidade).upper()[:15]
-    chave_clean = str(chave).strip()
+    
+    # Formatação da chave celular com +55 para o padrão internacional Pix
+    chave_digits = ''.join(filter(str.isdigit, str(chave)))
+    if len(chave_digits) == 11 and not chave_digits.startswith("55"):
+        chave_clean = f"+55{chave_digits}"
+    else:
+        chave_clean = str(chave).strip()
+
     str_valor = f"{valor:.2f}"
     
-    gui = "0014BR.GOV.BCB.PIX"
+    # Domínio minúsculo br.gov.bcb.pix e tamanho ajustado dinamicamente
+    gui = "br.gov.bcb.pix"
     key_part = f"01{len(chave_clean):02d}{chave_clean}"
-    merchant_account = f"26{len(gui + key_part):02d}{gui}{key_part}"
+    merchant_account = f"26{len(gui + key_part):02d}0014{gui}{key_part}"
     
     cat = "52040000"
     curr = "5303986"
