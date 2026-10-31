@@ -85,6 +85,7 @@ URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQ
 SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "81997752112"
+# BENEFICIÁRIO FIXADO EM EXATAMENTE 25 CARACTERES PARA BATER O CRC16 (7B83)
 BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
 URL_CARTAO_CREDITO = "https://www.mercadopago.com.br"
 
@@ -114,8 +115,8 @@ def calcular_crc16(payload):
 
 # GERADOR DE PIX EMV (BR CODE)
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
-    nome_clean = remover_acentos(nome).upper()[:25]
-    cidade_clean = remover_acentos(cidade).upper()[:15]
+    nome_clean = remover_acentos(nome).upper().strip()[:25]
+    cidade_clean = remover_acentos(cidade).upper().strip()[:15]
     
     chave_digits = ''.join(filter(str.isdigit, str(chave)))
     if len(chave_digits) == 11 and not chave_digits.startswith("55"):
