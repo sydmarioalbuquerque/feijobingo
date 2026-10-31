@@ -2,14 +2,10 @@ import streamlit as st
 import pandas as pd
 import requests
 import datetime
-import smtplib
 import unicodedata
 import random
+import base64
 import streamlit.components.v1 as components
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 
 try:
     from fpdf import FPDF
@@ -100,7 +96,7 @@ def remover_acentos(texto):
         if unicodedata.category(c) != 'Mn'
     )
 
-# CÁLCULO DE CRC16 EXATO (RETORNA 7B83 PARA R$ 100,00)
+# CÁLCULO DE CRC16 EXATO
 def calcular_crc16(payload):
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
@@ -112,13 +108,10 @@ def calcular_crc16(payload):
                 crc = (crc << 1) & 0xFFFF
     return f"{crc:04X}"
 
-# GERADOR DE PIX EMV (BR CODE) CORRIGIDO COM ESTRUTURA EXACT-36
+# GERADOR DE PIX EMV (BR CODE) CORRIGIDO
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     str_valor = f"{valor:.2f}"
-    
-    # Estrutura exata de 36 caracteres para a tag 26 que gera o 7B83 para R$ 100
     merchant_account = "26360014br.gov.bcb.pix0114+5581997752112"
-    
     cat = "52040000"
     curr = "5303986"
     amount = f"54{len(str_valor):02d}{str_valor}"
@@ -373,37 +366,21 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                     str_cartelas = ", ".join(map(str, cartelas_definidas))
                     desc_item = f"Combo Mesa Nº {st.session_state.mesa_selecionada:03d} + 4 Cartelas ({str_cartelas})"
                     
-                    payload = {
-                        "acao": "reservar_mesa_feijobingo",
+                    st.session_state.dados_venda = {
+                        "tipo": "Mesa FeijoBingo",
                         "id_mesa": int(st.session_state.mesa_selecionada),
                         "setor": setor_escolhido,
-                        "comprador_nome": nome,
-                        "comprador_whatsapp": whatsapp,
-                        "comprador_email": email,
-                        "valor_total": float(VALOR_COMBO_MESA),
-                        "item_descricao": desc_item,
-                        "num_cartelas": str_cartelas
+                        "item": desc_item,
+                        "nome": nome,
+                        "whatsapp": whatsapp,
+                        "email": email,
+                        "valor": VALOR_COMBO_MESA,
+                        "cartelas": str_cartelas,
+                        "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
                     }
-                    try:
-                        res = requests.post(URL_API, json=payload)
-                        if "Sucesso" in res.text or res.status_code == 200:
-                            st.session_state.dados_venda = {
-                                "tipo": "Mesa FeijoBingo",
-                                "item": desc_item,
-                                "nome": nome,
-                                "whatsapp": whatsapp,
-                                "email": email,
-                                "valor": VALOR_COMBO_MESA,
-                                "cartelas": str_cartelas,
-                                "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
-                            }
-                            st.session_state.pagamento_pendente = True
-                            st.session_state.mesa_selecionada = None
-                            st.rerun()
-                        else:
-                            st.error("O servidor não processou o registro da mesa.")
-                    except Exception as err:
-                        st.error(f"Erro de comunicação: {err}")
+                    st.session_state.pagamento_pendente = True
+                    st.session_state.mesa_selecionada = None
+                    st.rerun()
 
 # =========================================================
 # MÓDULO 2: ENTRADA INDIVIDUAL + 1 CARTELA (R$ 20,00)
@@ -451,34 +428,19 @@ elif modulo == "🎟️ Entrada Individual + 1 Cartela (R$ 20)":
                 str_cartelas = ", ".join(map(str, cartelas_definidas))
                 desc_item = f"{qtd_entradas}x Entrada Individual + Cartela(s) ({str_cartelas})"
                 
-                payload = {
-                    "acao": "comprar_entrada_individual",
+                st.session_state.dados_venda = {
+                    "tipo": "Entrada Individual",
                     "qtd": int(qtd_entradas),
-                    "comprador_nome": nome,
-                    "comprador_whatsapp": whatsapp,
-                    "comprador_email": email,
-                    "valor_total": float(valor_total_ind),
-                    "num_cartelas": str_cartelas
+                    "item": desc_item,
+                    "nome": nome,
+                    "whatsapp": whatsapp,
+                    "email": email,
+                    "valor": valor_total_ind,
+                    "cartelas": str_cartelas,
+                    "cod_aut": f"FB26-IND-{int(datetime.datetime.now().timestamp())}"
                 }
-                try:
-                    res = requests.post(URL_API, json=payload)
-                    if "Sucesso" in res.text or res.status_code == 200:
-                        st.session_state.dados_venda = {
-                            "tipo": "Entrada Individual",
-                            "item": desc_item,
-                            "nome": nome,
-                            "whatsapp": whatsapp,
-                            "email": email,
-                            "valor": valor_total_ind,
-                            "cartelas": str_cartelas,
-                            "cod_aut": f"FB26-IND-{int(datetime.datetime.now().timestamp())}"
-                        }
-                        st.session_state.pagamento_pendente = True
-                        st.rerun()
-                    else:
-                        st.error("Erro ao registrar entrada individual.")
-                except Exception as err:
-                    st.error(f"Erro de comunicação: {err}")
+                st.session_state.pagamento_pendente = True
+                st.rerun()
 
 # =========================================================
 # MÓDULO 3: CARTELA BINGO AVULSA (R$ 10,00)
@@ -525,42 +487,27 @@ elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
                 str_cartelas = ", ".join(map(str, cartelas_definidas))
                 desc_item = f"{qtd_cartelas}x Cartela(s) Bingo Avulsa ({str_cartelas})"
                 
-                payload = {
-                    "acao": "comprar_cartela_bingo",
+                st.session_state.dados_venda = {
+                    "tipo": "Bingo Online",
                     "qtd_cartelas": int(qtd_cartelas),
-                    "comprador_nome": nome,
-                    "comprador_whatsapp": whatsapp,
-                    "comprador_email": email,
-                    "valor_total": float(valor_total_bingo),
-                    "num_cartelas": str_cartelas
+                    "item": desc_item,
+                    "nome": nome,
+                    "whatsapp": whatsapp,
+                    "email": email,
+                    "valor": valor_total_bingo,
+                    "cartelas": str_cartelas,
+                    "cod_aut": f"FB26-BG-{int(datetime.datetime.now().timestamp())}"
                 }
-                try:
-                    res = requests.post(URL_API, json=payload)
-                    if "Sucesso" in res.text or res.status_code == 200:
-                        st.session_state.dados_venda = {
-                            "tipo": "Bingo Online",
-                            "item": desc_item,
-                            "nome": nome,
-                            "whatsapp": whatsapp,
-                            "email": email,
-                            "valor": valor_total_bingo,
-                            "cartelas": str_cartelas,
-                            "cod_aut": f"FB26-BG-{int(datetime.datetime.now().timestamp())}"
-                        }
-                        st.session_state.pagamento_pendente = True
-                        st.rerun()
-                    else:
-                        st.error("Erro interno ao gravar cartelas.")
-                except Exception as err:
-                    st.error(f"Erro de comunicação: {err}")
+                st.session_state.pagamento_pendente = True
+                st.rerun()
 
 # =========================================================
-# PAGAMENTO UNIFICADO (PIX COM VALOR EXATO + CARTÃO)
+# PAGAMENTO UNIFICADO + UPLOAD DO COMPROVANTE E GRAVAÇÃO
 # =========================================================
 if st.session_state.pagamento_pendente:
     venda = st.session_state.dados_venda
     st.markdown("---")
-    st.subheader("📌 Finalização e Pagamento")
+    st.subheader("📌 Finalização, Pagamento e Comprovante")
     st.write(f"Comprador: **{venda['nome']}**")
     st.write(f"Item Adquirido: **{venda['item']}**")
     if venda.get("cartelas"):
@@ -586,6 +533,50 @@ if st.session_state.pagamento_pendente:
             st.markdown("📱 **Ou Chave Celular Direta:**")
             st.code(CHAVE_PIX_CELULAR, language="text")
             st.write(f"👤 Beneficiário: **{BENEFICIARIO_PIX}**")
+
+        st.markdown("---")
+        st.markdown("### 📤 Envio do Comprovante de Pagamento Pix")
+        st.info("Após efetuar o Pix no app do seu banco, anexe o comprovante abaixo para confirmar e garantir a sua reserva na planilha.")
+        
+        comprovante_file = st.file_uploader("Anexe aqui o Comprovante Pix (JPG, PNG ou PDF):", type=["png", "jpg", "jpeg", "pdf"])
+        
+        if st.button("✅ Confirmar Reserva e Enviar Comprovante", type="primary"):
+            if comprovante_file is None:
+                st.warning("Por favor, selecione e anexe o arquivo do comprovante antes de confirmar.")
+            else:
+                with st.spinner("Gravando reserva e enviando comprovante..."):
+                    # Converter o arquivo enviado para Base64 para envio via JSON
+                    bytes_file = comprovante_file.read()
+                    b64_file = base64.b64encode(bytes_file).decode('utf-8')
+                    
+                    data_hoje = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                    
+                    payload_envio = {
+                        "acao": "gravar_reserva_completa",
+                        "tipo": venda["tipo"],
+                        "id_mesa": venda.get("id_mesa", ""),
+                        "setor": venda.get("setor", ""),
+                        "Comprador_Nome": venda["nome"],
+                        "Comprador_WhatsApp": venda["whatsapp"],
+                        "Comprador_Email": venda["email"],
+                        "Data_Venda": data_hoje,
+                        "Valor_Pago": float(venda["valor"]),
+                        "Num_Cartela": venda.get("cartelas", ""),
+                        "Status": "Reservada",
+                        "Comprovante_Nome": comprovante_file.name,
+                        "Comprovante_Base64": b64_file
+                    }
+                    
+                    try:
+                        res = requests.post(URL_API, json=payload_envio)
+                        if res.status_code == 200 or "Sucesso" in res.text:
+                            st.balloons()
+                            st.success("🎉 Reserva e Comprovante registrados com sucesso na planilha!")
+                            st.session_state.pagamento_confirmado = True
+                        else:
+                            st.error(f"Ocorreu um problema no Apps Script: {res.text}")
+                    except Exception as err:
+                        st.error(f"Erro ao conectar com o Google Apps Script: {err}")
 
     else:
         st.markdown("---")
