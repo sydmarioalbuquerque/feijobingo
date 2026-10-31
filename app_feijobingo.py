@@ -551,12 +551,9 @@ if st.session_state.pagamento_pendente:
                     b64_file = base64.b64encode(bytes_file).decode('utf-8')
                     
                     data_hoje = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-                    
                     payload_envio = {
-                        "acao": "gravar_reserva_completa",
-                        "tipo": venda["tipo"],
-                        "id_mesa": str(venda.get("id_mesa", "")),
-                        "setor": venda.get("setor", ""),
+                        "ID_Mesa": str(venda.get("id_mesa", "")),
+                        "Setor": venda.get("setor", ""),
                         "Comprador_Nome": venda["nome"],
                         "Comprador_WhatsApp": venda["whatsapp"],
                         "Comprador_Email": venda["email"],
@@ -566,7 +563,7 @@ if st.session_state.pagamento_pendente:
                         "Status": "Reservada",
                         "Comprovante_Nome": comprovante_file.name,
                         "Comprovante_Base64": b64_file
-                    }
+                    }    
                     
                     try:
                         # Envio via POST tratando redirecionamento do Apps Script
