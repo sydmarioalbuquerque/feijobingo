@@ -5,14 +5,19 @@ import datetime
 import unicodedata
 import random
 import base64
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 import streamlit.components.v1 as components
 
 try:
     from fpdf import FPDF
 except ImportError:
-    st.error("Por favor, garanta que 'fpdf2' está listado no arquivo requirements.txt no GitHub.")
+    st.error("Por favor, garanta que 'fpdf2' está listado no seu arquivo requirements.txt no GitHub.")
 
-# --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONE DA IGREJA ---
+# --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONES ---
 URL_LOGO_IGREJA = "https://i.imgur.com/k3okz8x.png"
 URL_CARTELA_OFICIAL = "https://i.postimg.cc/dtbd3x9T/Whats-App-Image-2026-10-31-at-16-26-43.jpg"
 
@@ -22,7 +27,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# INJEÇÃO HTML PARA VIEWPORT COM ZOOM EM CELULARES
+# INJEÇÃO HTML PARA VIEWPORT E ZOOM EM SMARTPHONES
 components.html(
     """
     <script>
@@ -35,7 +40,7 @@ components.html(
     height=0,
 )
 
-# CSS RESPONSIVO LIMPO
+# ESTILIZAÇÃO CSS RESPONSIVA
 st.markdown(
     """
     <style>
@@ -76,26 +81,71 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ENDPOINTS E PARÂMETROS
+# --- 2. ENDPOINTS E CONFIGURAÇÕES GERAIS ---
 URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQcIZfekMn8o_QFPP8jZy9JjdlbT5Xh68OmVUFOD/exec"
 SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "+5581997752112"
 BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
 
-# VALORES ATUALIZADOS PASCOM 2026
 VALOR_COMBO_MESA = 100.0   # Mesa + 4 Cartelas
 VALOR_ENTRADA_IND = 20.0   # Entrada Individual + 1 Cartela
 VALOR_CARTELA_AVULSA = 10.0 # Cartela Bingo Avulsa
 
-# REMOÇÃO DE ACENTOS PARA PIX EMV
+# --- 3. DISPARO DE E-MAIL COM ANEXO VIA SMTP (ESTILO FORROZANDO) ---
+def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_upload, cod_aut, valor_pago):
+    email_servidor = "sydmario.albuquerque@gmail.com" 
+    senha_aplicativo = "mtzk aoud fggp pflm" # Senha de aplicativo do Gmail
+    
+    emails_destinatarios = ["sydmario.albuquerque@gmail.com", "sydmario@yahoo.com.br", "paulapessoa82@gmail.com"]
+    
+    msg = MIMEMultipart()
+    msg['From'] = email_servidor
+    msg['To'] = ", ".join(emails_destinatarios)
+    msg['Subject'] = f"🔔 Novo Comprovante FeijoBingo 2026 - {nome_comprador}"
+    
+    corpo_mensagem = f"""
+    Atenção Equipe PASCOM / Organização,
+    
+    Um novo pedido foi registrado pelo aplicativo do FeijoBingo 2026 e aguarda validação:
+    
+    👤 Nome do Comprador: {nome_comprador}
+    🎫 Item Adquirido: {item_adquirido}
+    💰 Valor Declarado: R$ {valor_pago:.2f}
+    🔑 Código de Autenticação: {cod_aut}
+    
+    O arquivo do comprovante Pix enviado pelo cliente está anexado a este e-mail.
+    Assim que confirmar a entrada do dinheiro na conta paroquial, acesse o Google Sheets e mude o status para 'Pago' ou 'Confirmado'.
+    """
+    msg.attach(MIMEText(corpo_mensagem, 'plain'))
+    
+    try:
+        dados_arquivo = arquivo_upload.read()
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(dados_arquivo)
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename="{arquivo_upload.name}"')
+        msg.attach(part)
+        
+        arquivo_upload.seek(0)
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(email_servidor, senha_aplicativo)
+        server.sendmail(email_servidor, emails_destinatarios, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao enviar o e-mail para a equipe: {e}")
+        return False
+
+# --- 4. FUNÇÕES DE PIX EMV (BR CODE) ---
 def remover_acentos(texto):
     return ''.join(
         c for c in unicodedata.normalize('NFD', str(texto))
         if unicodedata.category(c) != 'Mn'
     )
 
-# CÁLCULO DE CRC16 EXATO
 def calcular_crc16(payload):
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
@@ -107,7 +157,6 @@ def calcular_crc16(payload):
                 crc = (crc << 1) & 0xFFFF
     return f"{crc:04X}"
 
-# GERADOR DE PIX EMV (BR CODE)
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     str_valor = f"{valor:.2f}"
     merchant_account = "26360014br.gov.bcb.pix0114+5581997752112"
@@ -122,7 +171,7 @@ def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     raw = f"000201{merchant_account}{cat}{curr}{amount}{country}{merchant_name}{merchant_city}{add_data}6304"
     return raw + calcular_crc16(raw)
 
-# LEITURA DE ABAS GOOGLE SHEETS
+# --- 5. LEITURA DE DADOS DO GOOGLE SHEETS ---
 def ler_aba_google_sheets(nome_aba):
     url_csv = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={nome_aba}"
     try:
@@ -135,12 +184,10 @@ def ler_aba_google_sheets(nome_aba):
         df.columns = df.columns.str.strip()
         return df
 
-# LEITURA DAS CARTELAS JÁ OCUPADAS/VENDIDAS NA FAIXA DE 101 A 1000
 def obter_cartelas_ocupadas():
     try:
         df_b = ler_aba_google_sheets("Cartelas_Bingo")
         if "Comprador_Nome" in df_b.columns and "Num_Cartela" in df_b.columns:
-            # Filtra onde já tem comprador preenchido
             df_vendidas = df_b[df_b["Comprador_Nome"].notna() & (df_b["Comprador_Nome"].astype(str).str.strip() != "")]
             nums = df_vendidas["Num_Cartela"].astype(str).str.split(",").explode().str.strip()
             return set(pd.to_numeric(nums, errors='coerce').dropna().astype(int).tolist())
@@ -148,14 +195,13 @@ def obter_cartelas_ocupadas():
         pass
     return set()
 
-# GERADOR DE NÚMEROS DE CARTELAS EXCLUSIVAMENTE NA FAIXA DE 101 A 1000
 def gerar_numeros_cartelas_aleatorios(qtd, ocupadas):
     disponiveis = [n for n in range(101, 1001) if n not in ocupadas]
     if len(disponiveis) < qtd:
         return disponiveis
     return random.sample(disponiveis, qtd)
 
-# GERADOR DE RECIBO PDF
+# --- 6. GERADOR DE RECIBO PDF TEMPORÁRIO ---
 def gerar_recibo_pdf(dados):
     pdf = FPDF()
     pdf.add_page()
@@ -211,7 +257,7 @@ def gerar_recibo_pdf(dados):
     pdf.cell(190, 5, "Guarde este comprovante temporário com você.", ln=True, align="C")
     return bytes(pdf.output())
 
-# SESSION STATE
+# --- 7. CONTROLE DE ESTADO DA SESSÃO ---
 if "pagamento_pendente" not in st.session_state:
     st.session_state.pagamento_pendente = False
 if "dados_venda" not in st.session_state:
@@ -219,7 +265,7 @@ if "dados_venda" not in st.session_state:
 if "mesa_selecionada" not in st.session_state:
     st.session_state.mesa_selecionada = None
 
-# HEADER COM LOGO
+# HEADER
 st.markdown(
     f"""
     <div style="text-align: center;">
@@ -233,7 +279,7 @@ st.markdown("<h1 style='text-align: center; margin-top:0; font-size:26px;'>🍲 
 st.markdown("<p style='text-align: center; font-weight: bold; color: #555; font-size:14px;'>Paróquia da Madalena - Festa de Nossa Senhora do Perpétuo Socorro</p>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; font-size:13px; color:#777;'>📅 <b>29 de Novembro a partir das 11h</b> | 📍 <b>Clube Português do Recife</b></p>", unsafe_allow_html=True)
 
-# SIDEBAR: VITRINE DE PRÊMIOS DO BINGO
+# SIDEBAR
 st.sidebar.image(URL_CARTELA_OFICIAL, caption="Cartela Oficial do FeijoBingo 2026", use_container_width=True)
 st.sidebar.markdown("### 🏆 Prêmios Principais do Bingo:")
 st.sidebar.markdown(
@@ -251,7 +297,6 @@ modulo = st.sidebar.radio(
     ["🪑 Combo Mesa + 4 Cartelas (R$ 100)", "🎟️ Entrada Individual + 1 Cartela (R$ 20)", "🎯 Cartela Bingo Avulsa (R$ 10)"]
 )
 
-# SEÇÃO EXPANSÍVEL DOS PRÊMIOS NO CORPO DO APP
 with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da Cartela Oficial"):
     col_img_premio, col_txt_premio = st.columns([1, 1])
     with col_img_premio:
@@ -271,7 +316,7 @@ with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da
         )
 
 # =========================================================
-# MÓDULO 1: COMBO MESA + 4 CARTELAS (R$ 100,00 UNIFICADO)
+# MÓDULO 1: COMBO MESA + 4 CARTELAS
 # =========================================================
 if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
     if not st.session_state.pagamento_pendente:
@@ -361,7 +406,7 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                     
                     duplicadas = [n for n in cartelas_definidas if n in cartelas_ocupadas]
                     if duplicadas:
-                        st.error(f"A(s) cartela(s) {duplicadas} já foi(ram) reservada(s) por outra pessoa. Escolha outro(s) número(s).")
+                        st.error(f"A(s) cartela(s) {duplicadas} já foi(ram) reservada(s). Escolha outro(s) número(s).")
                         st.stop()
 
                     str_cartelas = ", ".join(map(str, cartelas_definidas))
@@ -384,7 +429,7 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                     st.rerun()
 
 # =========================================================
-# MÓDULO 2: ENTRADA INDIVIDUAL + 1 CARTELA (R$ 20,00)
+# MÓDULO 2: ENTRADA INDIVIDUAL + 1 CARTELA
 # =========================================================
 elif modulo == "🎟️ Entrada Individual + 1 Cartela (R$ 20)":
     if not st.session_state.pagamento_pendente:
@@ -444,7 +489,7 @@ elif modulo == "🎟️ Entrada Individual + 1 Cartela (R$ 20)":
                 st.rerun()
 
 # =========================================================
-# MÓDULO 3: CARTELA BINGO AVULSA (R$ 10,00)
+# MÓDULO 3: CARTELA BINGO AVULSA
 # =========================================================
 elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
     if not st.session_state.pagamento_pendente:
@@ -504,7 +549,7 @@ elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
                 st.rerun()
 
 # =========================================================
-# PAGAMENTO UNIFICADO + UPLOAD DO COMPROVANTE E GRAVAÇÃO
+# FINALIZAÇÃO, PAGAMENTO E ENVIO DE COMPROVANTE
 # =========================================================
 if st.session_state.pagamento_pendente:
     venda = st.session_state.dados_venda
@@ -546,9 +591,20 @@ if st.session_state.pagamento_pendente:
             if comprovante_file is None:
                 st.warning("Por favor, selecione e anexe o arquivo do comprovante antes de confirmar.")
             else:
-                with st.spinner("Gravando reserva e enviando comprovante..."):
+                with st.spinner("Gravando reserva e enviando comprovante por e-mail..."):
+                    # 1. Envio do comprovante diretamente para a equipe via SMTP (Gmail)
+                    envio_email_sucesso = enviar_comprovante_administradores(
+                        venda["nome"], 
+                        venda["item"], 
+                        comprovante_file, 
+                        venda["cod_aut"],
+                        float(venda["valor"])
+                    )
+                    
+                    # 2. Gravação na planilha do Google Sheets via API
                     bytes_file = comprovante_file.read()
                     b64_file = base64.b64encode(bytes_file).decode('utf-8')
+                    comprovante_file.seek(0)
                     
                     data_hoje = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                     payload_envio = {
@@ -566,18 +622,18 @@ if st.session_state.pagamento_pendente:
                     }    
                     
                     try:
-                        # Envio via POST tratando redirecionamento do Apps Script
                         headers = {'Content-Type': 'application/json'}
                         res = requests.post(URL_API, json=payload_envio, headers=headers)
                         
                         if res.status_code == 200 or "Sucesso" in res.text:
                             st.balloons()
                             st.success("🎉 Reserva e Comprovante registrados com sucesso na planilha!")
-                            st.info("📧 Um e-mail de notificação foi enviado para a equipe de validação PASCOM.")
+                            if envio_email_sucesso:
+                                st.info("📧 O comprovante foi enviado com sucesso para o e-mail da equipe PASCOM!")
                         else:
-                            st.error(f"Erro ao salvar: {res.text}")
+                            st.error(f"Erro ao gravar na planilha: {res.text}")
                     except Exception as err:
-                        st.error(f"Erro ao conectar com o Google Apps Script: {err}")
+                        st.error(f"Erro de conexão com o servidor Google Script: {err}")
 
     else:
         st.markdown("---")
