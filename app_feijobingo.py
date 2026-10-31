@@ -18,6 +18,7 @@ except ImportError:
 
 # --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONE DA IGREJA ---
 URL_LOGO_IGREJA = "https://i.imgur.com/k3okz8x.png"
+URL_CARTELA_OFICIAL = "https://i.postimg.cc/44NnB3vH/WhatsApp-Image-2026-10-31-at-16-26-43.jpg"
 
 st.set_page_config(
     page_title="FeijoBingo 2026 - Paróquia da Madalena", 
@@ -87,7 +88,7 @@ CHAVE_PIX_CELULAR = "81997752112"
 BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO PERPETUO SOCORRO"
 URL_CARTAO_CREDITO = "https://www.mercadopago.com.br"
 
-# VALORES ATUALIZADOS DOS PRODUTOS PASCOM 2026
+# VALORES ATUALIZADOS PASCOM 2026
 VALOR_COMBO_MESA = 100.0   # Mesa + 4 Cartelas
 VALOR_ENTRADA_IND = 20.0   # Entrada Individual + 1 Cartela
 VALOR_CARTELA_AVULSA = 10.0 # Cartela Bingo Avulsa
@@ -144,7 +145,7 @@ def ler_aba_google_sheets(nome_aba):
         df.columns = df.columns.str.strip()
         return df
 
-# LEITURA DAS CARTELAS JÁ OCUPADAS/VENDIDAS NA PLANILHA
+# LEITURA DAS CARTELAS JÁ OCUPADAS/VENDIDAS
 def obter_cartelas_ocupadas():
     try:
         df_b = ler_aba_google_sheets("Cartelas_Bingo")
@@ -237,12 +238,45 @@ st.markdown(
 )
 
 st.markdown("<h1 style='text-align: center; margin-top:0; font-size:26px;'>🍲 FeijoBingo 2026 🎟️</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; font-weight: bold; color: #555; font-size:14px;'>Paróquia da Madalena - Venda Online Oficial</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-weight: bold; color: #555; font-size:14px;'>Paróquia da Madalena - Festa de Nossa Senhora do Perpétuo Socorro</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; font-size:13px; color:#777;'>📅 <b>29 de Novembro a partir das 11h</b> | 📍 <b>Clube Português do Recife</b></p>", unsafe_allow_html=True)
+
+# SIDEBAR: VITRINE DE PRÊMIOS DO BINGO
+st.sidebar.image(URL_CARTELA_OFICIAL, caption="Cartela Oficial do FeijoBingo 2026", use_container_width=True)
+st.sidebar.markdown("### 🏆 Prêmios Principais do Bingo:")
+st.sidebar.markdown(
+    """
+    * 📱 **1º Prêmio:** Smartphone
+    * 🍟 **2º Prêmio:** Airfryer
+    * 🔊 **3º Prêmio:** Caixa de Som Bluetooth
+    * 📺 **4º Prêmio:** Smart TV
+    * 💰 **5º Prêmio:** R$ 2.000,00 em Dinheiro
+    """
+)
 
 modulo = st.sidebar.radio(
     "Navegação:", 
     ["🪑 Combo Mesa + 4 Cartelas (R$ 100)", "🎟️ Entrada Individual + 1 Cartela (R$ 20)", "🎯 Cartela Bingo Avulsa (R$ 10)"]
 )
+
+# SEÇÃO EXPANSÍVEL DOS PRÊMIOS NO CORPO DO APP
+with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da Cartela Oficial"):
+    col_img_premio, col_txt_premio = st.columns([1, 1])
+    with col_img_premio:
+        st.image(URL_CARTELA_OFICIAL, caption="Cartela Física Oficial 2026", use_container_width=True)
+    with col_txt_premio:
+        st.markdown("#### 🏆 5 Grandes Prêmios:")
+        st.markdown(
+            """
+            1. 📱 **1º Prêmio:** Smartphone
+            2. 🍟 **2º Prêmio:** Airfryer
+            3. 🔊 **3º Prêmio:** Caixa de Som Bluetooth
+            4. 📺 **4º Prêmio:** Smart TV
+            5. 💰 **5º Prêmio:** **R$ 2.000,00** em dinheiro!
+            
+            *💡 Todas as cartelas vendidas online concorrem a todas as 5 rodadas!*
+            """
+        )
 
 # =========================================================
 # MÓDULO 1: COMBO MESA + 4 CARTELAS (R$ 100,00 UNIFICADO)
@@ -250,10 +284,10 @@ modulo = st.sidebar.radio(
 if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
     if not st.session_state.pagamento_pendente:
         st.subheader("Reserva de Mesa (Inclui 4 Cartelas do Bingo)")
-        st.success("🎉 Todas as mesas possuem o mesmo valor promocional de **R$ 100,00** e já garantem **4 Cartelas do Bingo**!")
+        st.success("🎉 Todas as mesas possuem o valor promocional único de **R$ 100,00** e garantem **4 Cartelas do Bingo**!")
         
         URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
-        st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo: Toque na imagem para ampliar", use_container_width=True)
+        st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo no Clube Português", use_container_width=True)
         
         try:
             df_mesas = ler_aba_google_sheets("Mesas_FeijoBingo")
@@ -329,7 +363,6 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                 sub = st.form_submit_button("Avançar para o Pagamento")
                 
                 if sub and nome and whatsapp and email:
-                    # Validação de Duplicidade
                     if len(set(cartelas_definidas)) < 4:
                         st.error("Não escolha números de cartela repetidos para o mesmo combo.")
                         st.stop()
