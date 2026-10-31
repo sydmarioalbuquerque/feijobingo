@@ -77,7 +77,7 @@ st.markdown(
 )
 
 # ENDPOINTS E PARÂMETROS
-URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQcIZfekMn8o_QFPP8jZy9JjdlbT5Xh68OmVUFOD/exec"
+URL_API = "https://script.google.com/macros/s/AKfycbysjXaYysWHccmBBEOG0-r6I5v3DyzieoCEyaX5JSqKZxf6KkXg7-vF5UiWzDrIdq0/exec"
 SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "+5581997752112"
