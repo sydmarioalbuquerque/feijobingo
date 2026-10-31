@@ -85,7 +85,7 @@ URL_API = "https://script.google.com/macros/s/AKfycbyAHGNR4OoeKP3tR3xwcSFmx_8eXQ
 SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 
 CHAVE_PIX_CELULAR = "81997752112"
-BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO PERPETUO SOCORRO"
+BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
 URL_CARTAO_CREDITO = "https://www.mercadopago.com.br"
 
 # VALORES ATUALIZADOS PASCOM 2026
@@ -100,12 +100,23 @@ def remover_acentos(texto):
         if unicodedata.category(c) != 'Mn'
     )
 
-# GERADOR DE PIX EMV (BR CODE) MODELO EXATO TESTADO E APROVADO
+# CÁLCULO DE CRC16 EXATO (RETORNA 7B83 PARA R$ 100,00)
+def calcular_crc16(payload):
+    crc = 0xFFFF
+    for char in payload.encode('utf-8'):
+        crc ^= (char << 8)
+        for _ in range(8):
+            if (crc & 0x8000) != 0:
+                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return f"{crc:04X}"
+
+# GERADOR DE PIX EMV (BR CODE)
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     nome_clean = remover_acentos(nome).upper()[:25]
     cidade_clean = remover_acentos(cidade).upper()[:15]
     
-    # Formatação da chave celular com +55 para o padrão internacional Pix
     chave_digits = ''.join(filter(str.isdigit, str(chave)))
     if len(chave_digits) == 11 and not chave_digits.startswith("55"):
         chave_clean = f"+55{chave_digits}"
@@ -114,7 +125,6 @@ def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
 
     str_valor = f"{valor:.2f}"
     
-    # Domínio minúsculo br.gov.bcb.pix e tamanho ajustado dinamicamente
     gui = "br.gov.bcb.pix"
     key_part = f"01{len(chave_clean):02d}{chave_clean}"
     merchant_account = f"26{len(gui + key_part):02d}0014{gui}{key_part}"
@@ -128,17 +138,7 @@ def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
     add_data = "62070503***"
     
     raw = f"000201{merchant_account}{cat}{curr}{amount}{country}{merchant_name}{merchant_city}{add_data}6304"
-    
-    crc = 0xFFFF
-    for char in raw:
-        crc ^= (ord(char) << 8)
-        for _ in range(8):
-            if (crc & 0x8000) != 0:
-                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
-            else:
-                crc = (crc << 1) & 0xFFFF
-    crc_str = f"{crc:04X}"
-    return raw + crc_str
+    return raw + calcular_crc16(raw)
 
 # LEITURA DE ABAS GOOGLE SHEETS
 def ler_aba_google_sheets(nome_aba):
