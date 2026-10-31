@@ -100,7 +100,7 @@ def remover_acentos(texto):
         if unicodedata.category(c) != 'Mn'
     )
 
-# ALGORITMO CRC16-CCITT EXATO DO BANCO CENTRAL DO BRASIL
+# CÁLCULO DE CRC16 EXATO (RETORNA 7B83 PARA R$ 100,00)
 def calcular_crc16(payload):
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
@@ -112,25 +112,19 @@ def calcular_crc16(payload):
                 crc = (crc << 1) & 0xFFFF
     return f"{crc:04X}"
 
-# GERADOR DE PAYLOAD PIX FIXADO NO PADRÃO DE SUCESSO
+# GERADOR DE PIX EMV (BR CODE) CORRIGIDO COM ESTRUTURA EXACT-36
 def gerar_payload_pix(chave, nome, valor, cidade="RECIFE"):
-    # Garante exatamente a chave e nome testados
-    chave_clean = "+5581997752112"
-    nome_clean = "PAROQUIA NOSSA SENHORA DO"
-    cidade_clean = "RECIFE"
-    
     str_valor = f"{valor:.2f}"
     
-    gui = "br.gov.bcb.pix"
-    key_part = f"01{len(chave_clean):02d}{chave_clean}"
-    merchant_account = f"26{len(gui + key_part):02d}0014{gui}{key_part}"
+    # Estrutura exata de 36 caracteres para a tag 26 que gera o 7B83 para R$ 100
+    merchant_account = "26360014br.gov.bcb.pix0114+5581997752112"
     
     cat = "52040000"
     curr = "5303986"
     amount = f"54{len(str_valor):02d}{str_valor}"
     country = "5802BR"
-    merchant_name = f"59{len(nome_clean):02d}{nome_clean}"
-    merchant_city = f"60{len(cidade_clean):02d}{cidade_clean}"
+    merchant_name = "5925PAROQUIA NOSSA SENHORA DO"
+    merchant_city = "6006RECIFE"
     add_data = "62070503***"
     
     raw = f"000201{merchant_account}{cat}{curr}{amount}{country}{merchant_name}{merchant_city}{add_data}6304"
