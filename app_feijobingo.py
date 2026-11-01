@@ -97,7 +97,7 @@ def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_u
     email_servidor = "sydmario.albuquerque@gmail.com" 
     senha_aplicativo = "mtzk aoud fggp pflm" # Senha de aplicativo do Gmail
     
-    emails_destinatarios = ["sydmario.albuquerque@gmail.com", "sydmario@yahoo.com.br", "paulapessoa82@gmail.com"]
+    emails_destinatarios = ["sydmario.albuquerque@gmail.com", "sydmario@yahoo.com.br", "salajunior@hotmail.com", "talithamey2@gmail.com", "paulapessoa82@gmail.com"]
     
     msg = MIMEMultipart()
     msg['From'] = email_servidor
