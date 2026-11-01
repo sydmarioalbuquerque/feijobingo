@@ -88,11 +88,11 @@ SHEET_ID = "1XIhcv1MBsWW7ufFqSPsuj3wxrVoAcD_Dv9zJVq4kvy0"
 CHAVE_PIX_CELULAR = "+5581997752112"
 BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
 
-VALOR_COMBO_MESA = 100.0   # Mesa + 4 Cartelas
-VALOR_ENTRADA_IND = 20.0   # Entrada Individual + 1 Cartela
+VALOR_COMBO_MESA = 100.0     # Mesa + 4 Cartelas
+VALOR_ENTRADA_IND = 25.0    # Entrada Individual + 1 Cartela (Atualizado para R$ 25,00)
 VALOR_CARTELA_AVULSA = 10.0 # Cartela Bingo Avulsa
 
-# --- 3. DISPARO DE E-MAIL COM ANEXO VIA SMTP (ESTILO FORROZANDO) ---
+# --- 3. DISPARO DE E-MAIL VIA SMTP ---
 def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_upload, cod_aut, valor_pago):
     email_servidor = "sydmario.albuquerque@gmail.com" 
     senha_aplicativo = "mtzk aoud fggp pflm" # Senha de aplicativo do Gmail
@@ -139,7 +139,7 @@ def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_u
         st.error(f"Erro ao enviar o e-mail para a equipe: {e}")
         return False
 
-# --- 4. FUNÇÕES DE PIX EMV (BR CODE) ---
+# --- 4. FUNÇÕES DE PIX EMV ---
 def remover_acentos(texto):
     return ''.join(
         c for c in unicodedata.normalize('NFD', str(texto))
@@ -262,8 +262,8 @@ if "pagamento_pendente" not in st.session_state:
     st.session_state.pagamento_pendente = False
 if "dados_venda" not in st.session_state:
     st.session_state.dados_venda = {}
-if "mesa_selecionada" not in st.session_state:
-    st.session_state.mesa_selecionada = None
+if "mesas_selecionadas" not in st.session_state:
+    st.session_state.mesas_selecionadas = []
 
 # HEADER
 st.markdown(
@@ -294,7 +294,7 @@ st.sidebar.markdown(
 
 modulo = st.sidebar.radio(
     "Navegação:", 
-    ["🪑 Combo Mesa + 4 Cartelas (R$ 100)", "🎟️ Entrada Individual + 1 Cartela (R$ 20)", "🎯 Cartela Bingo Avulsa (R$ 10)"]
+    ["🪑 Combo Mesa + 4 Cartelas (R$ 100)", f"🎟️ Entrada Individual + 1 Cartela (R$ {int(VALOR_ENTRADA_IND)})", "🎯 Cartela Bingo Avulsa (R$ 10)"]
 )
 
 with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da Cartela Oficial"):
@@ -316,12 +316,12 @@ with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da
         )
 
 # =========================================================
-# MÓDULO 1: COMBO MESA + 4 CARTELAS
+# MÓDULO 1: COMBO MESA + 4 CARTELAS (SUPORTE A MÚLTIPLAS MESAS)
 # =========================================================
 if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
     if not st.session_state.pagamento_pendente:
-        st.subheader("Reserva de Mesa (Inclui 4 Cartelas do Bingo)")
-        st.success("🎉 Todas as mesas possuem o valor promocional único de **R$ 100,00** e garantem **4 Cartelas do Bingo**!")
+        st.subheader("Reserva de Mesas (Cada Mesa inclui 4 Cartelas do Bingo)")
+        st.success("🎉 Cada mesa tem o valor de **R$ 100,00** e garante **4 Cartelas do Bingo**! Você pode selecionar mais de uma mesa.")
         
         URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
         st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo no Clube Português", use_container_width=True)
@@ -352,6 +352,7 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
         
         mesas_do_setor = intervalos[setor_escolhido]
         st.write(f"### Mesas do {setor_escolhido}:")
+        st.caption("Clique no número para selecionar/deselecionar a mesa.")
         
         cols_per_row = 6
         for i in range(0, len(mesas_do_setor), cols_per_row):
@@ -364,33 +365,44 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                 
                 with cols[idx]:
                     if is_livre:
-                        if st.session_state.mesa_selecionada == id_m:
-                            st.button(f"📌 {id_m:03d}", key=f"m_{id_m}", type="primary", use_container_width=True)
+                        if id_m in st.session_state.mesas_selecionadas:
+                            if st.button(f"📌 {id_m:03d}", key=f"m_{id_m}", type="primary", use_container_width=True):
+                                st.session_state.mesas_selecionadas.remove(id_m)
+                                st.rerun()
                         else:
                             if st.button(f"{id_m:03d}", key=f"m_{id_m}", type="secondary", use_container_width=True):
-                                st.session_state.mesa_selecionada = id_m
+                                st.session_state.mesas_selecionadas.append(id_m)
                                 st.rerun()
                     else:
                         st.button(f"❌ {id_m:03d}", key=f"m_{id_m}", disabled=True, use_container_width=True, help=f"Mesa {status}")
 
-        if st.session_state.mesa_selecionada:
-            st.success(f"Mesa Selecionada: **Nº {st.session_state.mesa_selecionada:03d}** (Combo Mesa + 4 Cartelas por R$ 100,00)")
+        if st.session_state.mesas_selecionadas:
+            st.session_state.mesas_selecionadas.sort()
+            qtd_mesas = len(st.session_state.mesas_selecionadas)
+            str_mesas_sel = ", ".join([f"Nº {m:03d}" for m in st.session_state.mesas_selecionadas])
+            total_combo_mesas = qtd_mesas * VALOR_COMBO_MESA
+            qtd_total_cartelas = qtd_mesas * 4
+
+            st.success(f"Mesas Selecionadas ({qtd_mesas}): **{str_mesas_sel}** | Total: **R$ {total_combo_mesas:.2f}** ({qtd_total_cartelas} Cartelas)")
             
-            st.markdown("#### 🎯 Escolha das 4 Cartelas do Bingo (Faixa nº 101 ao nº 1000):")
-            modo_cartela = st.radio("Como deseja definir os números das suas 4 cartelas?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
+            if st.button("🗑️ Limpar Seleção de Mesas"):
+                st.session_state.mesas_selecionadas = []
+                st.rerun()
+
+            st.markdown(f"#### 🎯 Escolha das {qtd_total_cartelas} Cartelas do Bingo (Faixa nº 101 ao nº 1000):")
+            modo_cartela = st.radio("Como deseja definir os números das suas cartelas?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
             
             cartelas_ocupadas = obter_cartelas_ocupadas()
             cartelas_definidas = []
             
             if modo_cartela == "Escolher os Números Manualmente":
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: num1 = st.number_input("Cartela 1:", min_value=101, max_value=1000, value=101, step=1)
-                with c2: num2 = st.number_input("Cartela 2:", min_value=101, max_value=1000, value=102, step=1)
-                with c3: num3 = st.number_input("Cartela 3:", min_value=101, max_value=1000, value=103, step=1)
-                with c4: num4 = st.number_input("Cartela 4:", min_value=101, max_value=1000, value=104, step=1)
-                cartelas_definidas = [int(num1), int(num2), int(num3), int(num4)]
+                cols_c = st.columns(min(qtd_total_cartelas, 4))
+                for idx in range(qtd_total_cartelas):
+                    with cols_c[idx % 4]:
+                        val_num = st.number_input(f"Cartela {idx+1}:", min_value=101, max_value=1000, value=101+idx, step=1, key=f"mesa_c_{idx}")
+                        cartelas_definidas.append(int(val_num))
             else:
-                cartelas_definidas = gerar_numeros_cartelas_aleatorios(4, cartelas_ocupadas)
+                cartelas_definidas = gerar_numeros_cartelas_aleatorios(qtd_total_cartelas, cartelas_ocupadas)
                 st.info(f"Cartelas Geradas: **{', '.join(map(str, cartelas_definidas))}**")
 
             with st.form("form_mesa"):
@@ -400,8 +412,8 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                 sub = st.form_submit_button("Avançar para o Pagamento")
                 
                 if sub and nome and whatsapp and email:
-                    if len(set(cartelas_definidas)) < 4:
-                        st.error("Não escolha números de cartela repetidos para o mesmo combo.")
+                    if len(set(cartelas_definidas)) < qtd_total_cartelas:
+                        st.error("Não escolha números de cartela repetidos para os combos.")
                         st.stop()
                     
                     duplicadas = [n for n in cartelas_definidas if n in cartelas_ocupadas]
@@ -410,28 +422,29 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                         st.stop()
 
                     str_cartelas = ", ".join(map(str, cartelas_definidas))
-                    desc_item = f"Combo Mesa Nº {st.session_state.mesa_selecionada:03d} + 4 Cartelas ({str_cartelas})"
+                    str_ids_mesas = ", ".join([str(m) for m in st.session_state.mesas_selecionadas])
+                    desc_item = f"{qtd_mesas}x Combo Mesa(s) ({str_mesas_sel}) + {qtd_total_cartelas} Cartelas ({str_cartelas})"
                     
                     st.session_state.dados_venda = {
                         "tipo": "Mesa FeijoBingo",
-                        "id_mesa": int(st.session_state.mesa_selecionada),
+                        "id_mesa": str_ids_mesas,
                         "setor": setor_escolhido,
                         "item": desc_item,
                         "nome": nome,
                         "whatsapp": whatsapp,
                         "email": email,
-                        "valor": VALOR_COMBO_MESA,
+                        "valor": total_combo_mesas,
                         "cartelas": str_cartelas,
-                        "cod_aut": f"FB26-M{st.session_state.mesa_selecionada:03d}-{int(datetime.datetime.now().timestamp())}"
+                        "cod_aut": f"FB26-M{st.session_state.mesas_selecionadas[0]:03d}-{int(datetime.datetime.now().timestamp())}"
                     }
                     st.session_state.pagamento_pendente = True
-                    st.session_state.mesa_selecionada = None
+                    st.session_state.mesas_selecionadas = []
                     st.rerun()
 
 # =========================================================
-# MÓDULO 2: ENTRADA INDIVIDUAL + 1 CARTELA
+# MÓDULO 2: ENTRADA INDIVIDUAL + 1 CARTELA (R$ 25,00)
 # =========================================================
-elif modulo == "🎟️ Entrada Individual + 1 Cartela (R$ 20)":
+elif modulo == f"🎟️ Entrada Individual + 1 Cartela (R$ {int(VALOR_ENTRADA_IND)})":
     if not st.session_state.pagamento_pendente:
         st.subheader("Entrada Individual (Inclui 1 Cartela do Bingo)")
         st.markdown(f"🎟️ **Valor Unitário:** <span style='color:#27ae60; font-weight:bold;'>R$ {VALOR_ENTRADA_IND:.2f}</span>", unsafe_allow_html=True)
@@ -657,4 +670,5 @@ if st.session_state.pagamento_pendente:
     if st.button("Realizar Nova Operação / Voltar"):
         st.session_state.pagamento_pendente = False
         st.session_state.dados_venda = {}
+        st.session_state.mesas_selecionadas = []
         st.rerun()
