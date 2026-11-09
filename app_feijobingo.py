@@ -89,7 +89,7 @@ CHAVE_PIX_CELULAR = "+5581997752112"
 BENEFICIARIO_PIX = "PAROQUIA NOSSA SENHORA DO"
 
 VALOR_COMBO_MESA = 100.0     # Mesa + 4 Cartelas
-VALOR_ENTRADA_IND = 25.0    # Entrada Individual + 1 Cartela (Atualizado para R$ 25,00)
+VALOR_ENTRADA_IND = 25.0    # Entrada Individual + 1 Cartela
 VALOR_CARTELA_AVULSA = 10.0 # Cartela Bingo Avulsa
 
 # --- 3. DISPARO DE E-MAIL VIA SMTP ---
@@ -196,7 +196,7 @@ def obter_cartelas_ocupadas():
     return set()
 
 def gerar_numeros_cartelas_aleatorios(qtd, ocupadas):
-    disponiveis = [n for n in range(101, 1001) if n not in ocupadas]
+    disponiveis = [n for n in range(1, 1201) if n not in ocupadas]
     if len(disponiveis) < qtd:
         return disponiveis
     return random.sample(disponiveis, qtd)
@@ -311,7 +311,7 @@ with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da
             4. 📺 **4º Prêmio:** Smart TV
             5. 💰 **5º Prêmio:** **R$ 2.000,00** em dinheiro!
             
-            *💡 Vendas de cartelas pelo app restritas do nº 101 ao nº 1000.*
+            *💡 Vendas de cartelas pelo app disponíveis do nº 1 ao nº 1200.*
             """
         )
 
@@ -389,7 +389,7 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                 st.session_state.mesas_selecionadas = []
                 st.rerun()
 
-            st.markdown(f"#### 🎯 Escolha das {qtd_total_cartelas} Cartelas do Bingo (Faixa nº 101 ao nº 1000):")
+            st.markdown(f"#### 🎯 Escolha das {qtd_total_cartelas} Cartelas do Bingo (Faixa nº 1 ao nº 1200):")
             modo_cartela = st.radio("Como deseja definir os números das suas cartelas?", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
             
             cartelas_ocupadas = obter_cartelas_ocupadas()
@@ -399,7 +399,7 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
                 cols_c = st.columns(min(qtd_total_cartelas, 4))
                 for idx in range(qtd_total_cartelas):
                     with cols_c[idx % 4]:
-                        val_num = st.number_input(f"Cartela {idx+1}:", min_value=101, max_value=1000, value=101+idx, step=1, key=f"mesa_c_{idx}")
+                        val_num = st.number_input(f"Cartela {idx+1}:", min_value=1, max_value=1200, value=1+idx, step=1, key=f"mesa_c_{idx}")
                         cartelas_definidas.append(int(val_num))
             else:
                 cartelas_definidas = gerar_numeros_cartelas_aleatorios(qtd_total_cartelas, cartelas_ocupadas)
@@ -453,16 +453,16 @@ elif modulo == f"🎟️ Entrada Individual + 1 Cartela (R$ {int(VALOR_ENTRADA_I
         valor_total_ind = qtd_entradas * VALOR_ENTRADA_IND
         st.markdown(f"### Total: <span style='color:#27ae60;'>R$ {valor_total_ind:.2f}</span>", unsafe_allow_html=True)
         
-        modo_cartela = st.radio(f"Como deseja definir os números da(s) {qtd_entradas} cartela(s)? (Faixa nº 101 ao nº 1000)", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
+        modo_cartela = st.radio(f"Como deseja definir os números da(s) {qtd_entradas} cartela(s)? (Faixa nº 1 ao nº 1200)", ["Gerar de Forma Aleatória", "Escolher os Números Manualmente"])
         cartelas_ocupadas = obter_cartelas_ocupadas()
         cartelas_definidas = []
         
         if modo_cartela == "Escolher os Números Manualmente":
-            st.caption("Digite os números desejados para cada cartela (101 a 1000):")
+            st.caption("Digite os números desejados para cada cartela (1 a 1200):")
             cols = st.columns(min(int(qtd_entradas), 4))
             for idx in range(int(qtd_entradas)):
                 with cols[idx % 4]:
-                    val = st.number_input(f"Cartela {idx+1}:", min_value=101, max_value=1000, value=101+idx, key=f"ind_c_{idx}")
+                    val = st.number_input(f"Cartela {idx+1}:", min_value=1, max_value=1200, value=1+idx, key=f"ind_c_{idx}")
                     cartelas_definidas.append(int(val))
         else:
             cartelas_definidas = gerar_numeros_cartelas_aleatorios(int(qtd_entradas), cartelas_ocupadas)
@@ -508,7 +508,7 @@ elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
     if not st.session_state.pagamento_pendente:
         st.subheader("Venda de Cartela Bingo Avulsa")
         st.markdown(f"🎟️ **Valor Unitário:** <span style='color:#27ae60; font-weight:bold;'>R$ {VALOR_CARTELA_AVULSA:.2f}</span>", unsafe_allow_html=True)
-        st.caption("📌 Vendas via aplicativo disponíveis apenas para o intervalo das cartelas nº 101 ao nº 1000.")
+        st.caption("📌 Vendas via aplicativo disponíveis para o intervalo das cartelas nº 1 ao nº 1200.")
         
         qtd_cartelas = st.number_input("Quantidade de Cartelas Avulsas:", min_value=1, max_value=50, value=1, step=1)
         valor_total_bingo = qtd_cartelas * VALOR_CARTELA_AVULSA
@@ -522,7 +522,7 @@ elif modulo == "🎯 Cartela Bingo Avulsa (R$ 10)":
             cols = st.columns(min(int(qtd_cartelas), 4))
             for idx in range(int(qtd_cartelas)):
                 with cols[idx % 4]:
-                    val = st.number_input(f"Cartela {idx+1}:", min_value=101, max_value=1000, value=101+idx, key=f"av_c_{idx}")
+                    val = st.number_input(f"Cartela {idx+1}:", min_value=1, max_value=1200, value=1+idx, key=f"av_c_{idx}")
                     cartelas_definidas.append(int(val))
         else:
             cartelas_definidas = gerar_numeros_cartelas_aleatorios(int(qtd_cartelas), cartelas_ocupadas)
