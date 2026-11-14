@@ -6,6 +6,8 @@ import unicodedata
 import random
 import base64
 import smtplib
+from io import BytesIO
+from PIL import Image, ImageDraw
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -20,6 +22,7 @@ except ImportError:
 # --- 1. CONFIGURAÇÃO DA PÁGINA E ÍCONES ---
 URL_LOGO_IGREJA = "https://i.imgur.com/k3okz8x.png"
 URL_CARTELA_OFICIAL = "https://i.postimg.cc/dtbd3x9T/Whats-App-Image-2026-10-31-at-16-26-43.jpg"
+URL_MAPA_LIMPO = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
 
 st.set_page_config(
     page_title="FeijoBingo 2026 - Paróquia da Madalena", 
@@ -92,10 +95,153 @@ VALOR_COMBO_MESA = 100.0     # Mesa + 4 Cartelas
 VALOR_ENTRADA_IND = 25.0    # Entrada Individual + 1 Cartela
 VALOR_CARTELA_AVULSA = 10.0 # Cartela Bingo Avulsa
 
+# --- DEFINIÇÃO DAS 248 MESAS LIBERADAS PARA VENDA NO APP ---
+SETORES_248_MESAS = {
+    "Setor A (Frente Esquerda - 60 Mesas)": list(range(35, 95)),
+    "Setor B (Frente Direita - 60 Mesas)": sorted(list(range(95, 148)) + [151, 152, 154, 155, 157, 158, 160]),
+    "Setor C (Fundo Esquerdo - 64 Mesas)": [
+        m for row_start in range(174, 252, 11) for m in range(row_start, row_start + 8)
+    ],
+    "Setor D (Fundo Direito - 64 Mesas)": [
+        m for row_start in range(277, 348, 10) for m in range(row_start, row_start + 8)
+    ]
+}
+
+MESAS_PERMITIDAS_SET = set(
+    m for lista in SETORES_248_MESAS.values() for m in lista
+)
+
+# --- MAPEAMENTO DE COORDENADAS NORMALIZADAS (0.0 a 1.0) DAS 366 MESAS ---
+def obter_coordenadas_mapa():
+    coords = {}
+    
+    # 1. Bloco Superior Esquerdo (Mesas 001 a 034 - Laterais / Passarela)
+    linhas_esq_top = [
+        (0.244, [1, 2]),
+        (0.273, [3, 4, 19, 20]),
+        (0.304, [5, 6, 21, 22]),
+        (0.334, [7, 8, 23, 24]),
+        (0.365, [9, 10, 25, 26]),
+        (0.397, [11, 12, 27, 28]),
+        (0.428, [13, 14, 29, 30]),
+        (0.459, [15, 16, 31, 32]),
+        (0.491, [17, 18, 33, 34]),
+    ]
+    xs_esq_top = [0.095, 0.125, 0.181, 0.212]
+    for y, ids in linhas_esq_top:
+        offset = 2 if len(ids) == 2 else 0
+        for idx, m_id in enumerate(ids):
+            coords[m_id] = (xs_esq_top[idx + offset], y)
+
+    # 2. Setor A (Mesas 035 a 094)
+    linhas_setor_a = [
+        (0.304, list(range(35, 43))),
+        (0.334, list(range(43, 51))),
+        (0.365, list(range(51, 59))),
+        (0.397, list(range(59, 68))),
+        (0.428, list(range(68, 77))),
+        (0.459, list(range(77, 86))),
+        (0.491, list(range(86, 95))),
+    ]
+    for y, ids in linhas_setor_a:
+        n = len(ids)
+        x_ini = 0.254 if n == 8 else 0.222
+        x_fim = 0.471
+        for idx, m_id in enumerate(ids):
+            x = x_ini + idx * (x_fim - x_ini) / (n - 1)
+            coords[m_id] = (x, y)
+
+    # 3. Setor B (Mesas 095 a 171)
+    linhas_setor_b = [
+        (0.273, [148, 149, 150]),
+        (0.304, list(range(95, 102)) + [151, 152, 153]),
+        (0.334, list(range(102, 109)) + [154, 155, 156]),
+        (0.365, list(range(109, 116)) + [157, 158, 159]),
+        (0.397, list(range(116, 124)) + [160, 161, 162]),
+        (0.428, list(range(124, 132)) + [163, 164, 165]),
+        (0.459, list(range(132, 140)) + [166, 167, 168]),
+        (0.491, list(range(140, 148)) + [169, 170, 171]),
+    ]
+    for y, ids in linhas_setor_b:
+        if len(ids) == 3:
+            xs = [0.775, 0.806, 0.844]
+            for idx, m_id in enumerate(ids):
+                coords[m_id] = (xs[idx], y)
+        elif len(ids) == 10:
+            xs = [0.571, 0.602, 0.633, 0.664, 0.695, 0.726, 0.757, 0.793, 0.824, 0.855]
+            for idx, m_id in enumerate(ids):
+                coords[m_id] = (xs[idx], y)
+        else:
+            xs = [0.571, 0.602, 0.633, 0.664, 0.695, 0.726, 0.757, 0.788, 0.822, 0.854, 0.885]
+            for idx, m_id in enumerate(ids):
+                coords[m_id] = (xs[idx], y)
+
+    # 4. Setor C (Mesas 172 a 270)
+    ys_c = [0.580, 0.611, 0.642, 0.673, 0.704, 0.735, 0.766, 0.797, 0.828]
+    xs_c = [0.095, 0.125, 0.159, 0.189, 0.222, 0.253, 0.284, 0.315, 0.346, 0.377, 0.408, 0.439, 0.470]
+    m_atual = 172
+    for r_idx, y in enumerate(ys_c):
+        if r_idx < 8:
+            for c_idx in range(11):
+                coords[m_atual] = (xs_c[c_idx + 2], y)
+                m_atual += 1
+        else:
+            for c_idx in range(11):
+                coords[m_atual] = (xs_c[c_idx + 2], y)
+                m_atual += 1
+
+    # 5. Setor D (Mesas 277 a 366)
+    ys_d = [0.580, 0.611, 0.642, 0.673, 0.704, 0.735, 0.766, 0.797, 0.828]
+    xs_d = [0.571, 0.602, 0.633, 0.664, 0.695, 0.726, 0.757, 0.788, 0.822, 0.854]
+    m_atual = 277
+    for r_idx, y in enumerate(ys_d):
+        cols = 10
+        for c_idx in range(cols):
+            coords[m_atual] = (xs_d[c_idx], y)
+            m_atual += 1
+
+    return coords
+
+@st.cache_data(ttl=3600)
+def carregar_imagem_base():
+    resp = requests.get(URL_MAPA_LIMPO, timeout=10)
+    return Image.open(BytesIO(resp.content)).convert("RGBA")
+
+def gerar_mapa_dinamico(df_mesas, mesas_selecionadas):
+    img = carregar_imagem_base().copy()
+    draw = ImageDraw.Draw(img)
+    w, h = img.size
+    coords = obter_coordenadas_mapa()
+    raio = max(8, int(w * 0.011))
+
+    # Mapeia status atual na planilha
+    status_dict = {}
+    for _, row in df_mesas.iterrows():
+        m_id = int(row["ID_Mesa"])
+        status_dict[m_id] = str(row["Status"]).strip().capitalize()
+
+    for m_id, (nx, ny) in coords.items():
+        cx, cy = int(nx * w), int(ny * h)
+        st_mesa = status_dict.get(m_id, "")
+        is_ocupada_planilha = st_mesa not in ("", "Livre", "Nan")
+        is_bloqueada_barraca = m_id not in MESAS_PERMITIDAS_SET
+
+        if m_id in mesas_selecionadas:
+            # Destaque Azul para mesas selecionadas no momento pelo usuário
+            draw.ellipse([cx - raio - 2, cy - raio - 2, cx + raio + 2, cy + raio + 2], outline=(0, 102, 255, 255), width=4)
+        elif is_ocupada_planilha or is_bloqueada_barraca:
+            # X Vermelho forte para mesas vendidas, reservadas ou destinadas às barracas
+            cor_x = (220, 20, 20, 255)
+            espessura = max(3, int(w * 0.0035))
+            draw.line([cx - raio, cy - raio, cx + raio, cy + raio], fill=cor_x, width=espessura)
+            draw.line([cx - raio, cy + raio, cx + raio, cy - raio], fill=cor_x, width=espessura)
+
+    return img
+
 # --- 3. DISPARO DE E-MAIL VIA SMTP ---
 def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_upload, cod_aut, valor_pago):
     email_servidor = "sydmario.albuquerque@gmail.com" 
-    senha_aplicativo = "mtzk aoud fggp pflm" # Senha de aplicativo do Gmail
+    senha_aplicativo = "mtzk aoud fggp pflm"
     
     emails_destinatarios = ["sydmario.albuquerque@gmail.com", "sydmario@yahoo.com.br", "salajunior@hotmail.com", "talithamey2@gmail.com", "paulapessoa82@gmail.com"]
     
@@ -115,7 +261,7 @@ def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_u
     🔑 Código de Autenticação: {cod_aut}
     
     O arquivo do comprovante Pix enviado pelo cliente está anexado a este e-mail.
-    Assim que confirmar a entrada do dinheiro na conta paroquial, acesse o Google Sheets e mude o status para 'Pago' ou 'Confirmado'.
+    Assim que confirmar a entrada do dinheiro na conta paroquial, acesse o Google Sheets ou o Painel de Gestão e mude o status para 'Pago'.
     """
     msg.attach(MIMEText(corpo_mensagem, 'plain'))
     
@@ -126,7 +272,6 @@ def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_u
         encoders.encode_base64(part)
         part.add_header('Content-Disposition', f'attachment; filename="{arquivo_upload.name}"')
         msg.attach(part)
-        
         arquivo_upload.seek(0)
         
         server = smtplib.SMTP('smtp.gmail.com', 587)
@@ -140,12 +285,6 @@ def enviar_comprovante_administradores(nome_comprador, item_adquirido, arquivo_u
         return False
 
 # --- 4. FUNÇÕES DE PIX EMV ---
-def remover_acentos(texto):
-    return ''.join(
-        c for c in unicodedata.normalize('NFD', str(texto))
-        if unicodedata.category(c) != 'Mn'
-    )
-
 def calcular_crc16(payload):
     crc = 0xFFFF
     for char in payload.encode('utf-8'):
@@ -316,15 +455,12 @@ with st.expander("🎁 Clique aqui para ver a lista dos 5 Prêmios e o Modelo da
         )
 
 # =========================================================
-# MÓDULO 1: COMBO MESA + 4 CARTELAS (SUPORTE A MÚLTIPLAS MESAS)
+# MÓDULO 1: COMBO MESA + 4 CARTELAS (248 MESAS + MAPA DINÂMICO)
 # =========================================================
 if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
     if not st.session_state.pagamento_pendente:
         st.subheader("Reserva de Mesas (Cada Mesa inclui 4 Cartelas do Bingo)")
         st.success("🎉 Cada mesa tem o valor de **R$ 100,00** e garante **4 Cartelas do Bingo**! Você pode selecionar mais de uma mesa.")
-        
-        URL_MAPA = "https://i.postimg.cc/s2WHBKmr/Mapa-das-Mesas.png"
-        st.image(URL_MAPA, caption="Layout Oficial do FeijoBingo no Clube Português", use_container_width=True)
         
         try:
             df_mesas = ler_aba_google_sheets("Mesas_FeijoBingo")
@@ -337,22 +473,21 @@ if modulo == "🪑 Combo Mesa + 4 Cartelas (R$ 100)":
             st.error("Erro ao ler a aba 'Mesas_FeijoBingo'. Verifique a aba no Google Sheets.")
             st.stop()
 
+        # MAPA DINÂMICO COM X VERMELHO NAS INDISPONÍVEIS / VENDIDAS
+        try:
+            mapa_atualizado = gerar_mapa_dinamico(df_mesas, st.session_state.mesas_selecionadas)
+            st.image(mapa_atualizado, caption="Layout Atualizado em Tempo Real (❌ Indisponível/Reservada | 🔵 Selecionada | 🟢 Livre)", use_container_width=True)
+        except Exception:
+            st.image(URL_MAPA_LIMPO, caption="Layout Oficial do FeijoBingo no Clube Português", use_container_width=True)
+
         setor_escolhido = st.selectbox(
-            "Selecione o Setor no Mapa:",
-            ["Setor A (Frente Esquerda)", "Setor B (Frente Direita)", "Setor C (Fundo Esquerdo)", "Setor D (Fundo Direito)", "Passarela / Laterais"]
+            "Selecione o Setor no Mapa (248 Mesas Disponíveis para Venda):",
+            list(SETORES_248_MESAS.keys())
         )
         
-        intervalos = {
-            "Setor A (Frente Esquerda)": list(range(21, 95)),
-            "Setor B (Frente Direita)": list(range(95, 172)),
-            "Setor C (Fundo Esquerdo)": list(range(172, 271)),
-            "Setor D (Fundo Direito)": list(range(277, 367)),
-            "Passarela / Laterais": list(range(1, 21))
-        }
-        
-        mesas_do_setor = intervalos[setor_escolhido]
+        mesas_do_setor = SETORES_248_MESAS[setor_escolhido]
         st.write(f"### Mesas do {setor_escolhido}:")
-        st.caption("Clique no número para selecionar/deselecionar a mesa.")
+        st.caption("Clique no número verde/branco para selecionar ou deselecionar a mesa.")
         
         cols_per_row = 6
         for i in range(0, len(mesas_do_setor), cols_per_row):
@@ -605,7 +740,6 @@ if st.session_state.pagamento_pendente:
                 st.warning("Por favor, selecione e anexe o arquivo do comprovante antes de confirmar.")
             else:
                 with st.spinner("Gravando reserva e enviando comprovante por e-mail..."):
-                    # 1. Envio do comprovante diretamente para a equipe via SMTP (Gmail)
                     envio_email_sucesso = enviar_comprovante_administradores(
                         venda["nome"], 
                         venda["item"], 
@@ -614,7 +748,6 @@ if st.session_state.pagamento_pendente:
                         float(venda["valor"])
                     )
                     
-                    # 2. Gravação na planilha do Google Sheets via API
                     bytes_file = comprovante_file.read()
                     b64_file = base64.b64encode(bytes_file).decode('utf-8')
                     comprovante_file.seek(0)
